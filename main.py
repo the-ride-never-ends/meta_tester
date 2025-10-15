@@ -20,6 +20,10 @@ def run_meta_tester(test_file: str) -> dict[str, Any]:
     """
     Run the meta-tester on a specific test file.
 
+    Meta-Tester is a unit test suite for for a pytest unit test suite. 
+    It automatically detects common testing anti-patterns and 
+    enforces consistent test standards. 
+
     Args:
         test_file (str): Path to the test file to analyze.
 

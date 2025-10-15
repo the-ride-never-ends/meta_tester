@@ -19,7 +19,7 @@ class ProductionClass:
     def production_method(self, x: int, y: int) -> int:
         return x + y
 
-    def another_production_class(self, text: str) -> str:
+    def another_production_method(self, text: str) -> str:
         return text.upper()
 
     def _private_method(self) -> str:

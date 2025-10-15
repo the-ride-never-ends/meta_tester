@@ -13,13 +13,14 @@ import logging
 import importlib.util
 import re
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 
 from logger import logger
+from utils import read_file_content
 from individual_tests.check_method_length import check_method_length
 from analyzers.fixture_analyzer import FixtureAnalyzer
-
+from tests._fixture_attribute_analyzer import check_fixture_attribute
 
 # Hash the file.
 _THIS_DIR = Path(__file__).parent
@@ -77,36 +78,19 @@ def _read_first_line(test_file: str) -> str:
         raise IOError(f"Failed to read first line of {test_file}: {e}") from e
 
 
-def _read_file_content(test_file: str) -> str:
-    """Read the entire content of a test file.
-    
-    Args:
-        test_file (str): Path to the test file.
-        
-    Returns:
-        str: The entire content of the file.
-        
-    Raises:
-        IOError: If the file cannot be read.
-    """
-    try:
-        with open(test_file, 'r', encoding='utf-8') as f:
-            return f.read()
-    except Exception as e:
-        raise IOError(f"Failed to read {test_file}: {e}") from e
 
-
-
-class TestFileAnalyzer:
+class _TestFileAnalyzer:
     """Analyzes test files for various violations."""
 
     def __init__(self, 
                  file_path: str, 
                  logger: logging.Logger = logger,
+                 check_fixture_attribute: Callable = check_fixture_attribute,
                  ):
         self.file_path = file_path
-        self.source_code = _read_file_content(file_path)
+        self.source_code = read_file_content(file_path)
         self.logger = logger
+        self.check_fixture_attribute = check_fixture_attribute
         #self.check_method_length = check_method_length
         try:
             self.tree = ast.parse(self.source_code)
@@ -125,7 +109,7 @@ class TestFileAnalyzer:
             method = getattr(self, name)
             return method(*args)
         else:
-            raise AttributeError(f"Test method {name} not found in TestFileAnalyzer.")
+            raise AttributeError(f"Test method {name} not found in _TestFileAnalyzer.")
  
     def get_test_methods(self):
         """Get all test methods in the file."""
@@ -158,7 +142,7 @@ class TestFileAnalyzer:
     @staticmethod
     def _is_function_call(child: ast.AST) -> bool:
         """Check if AST node is a function call."""
-        return True if isinstance(child, ast.Call) and isinstance(child.func, ast.Name) else False
+        return isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
 
     def check_method_length(self, test_node) -> int:
         """Check if method is longer than 10 lines (excluding docstrings)."""
@@ -167,9 +151,8 @@ class TestFileAnalyzer:
 
         # Skip docstring if present
         docstring_lines = 0
-        if (test_node.body and isinstance(test_node.body[0], ast.Expr) and 
-            isinstance(test_node.body[0].value, ast.Constant) and 
-            isinstance(test_node.body[0].value.value, str)):
+        docstring = ast.get_docstring(test_node)
+        if docstring is not None:
             docstring_end = test_node.body[0].end_lineno
             docstring_lines = docstring_end - start_line + 1
 
@@ -233,8 +216,8 @@ class TestFileAnalyzer:
             # Skip docstrings
             if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and isinstance(stmt.value.value, str):
                 continue
-            # Skip pass statements
-            if isinstance(stmt, ast.Pass):
+            # Skip pass and ellipsis statements
+            if isinstance(stmt, ast.Pass) or (isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and stmt.value.value == Ellipsis):
                 continue
             executable_statements.append(stmt)
         return len(executable_statements) > 0
@@ -242,7 +225,7 @@ class TestFileAnalyzer:
 
     def _is_assert(self, child: ast.AST) -> bool:
         # TODO: This works for pytest, but not for unittest assertions
-        return True if isinstance(child, ast.Assert) else False
+        return isinstance(child, ast.Assert)
 
 
     def _get_msg_node(self, child):
@@ -258,24 +241,12 @@ class TestFileAnalyzer:
             return None
         return child.msg
 
+
     def check_assertion_for_f_string_messages(self, test_node) -> bool:
         """Check that assertions have descriptive f-string messages."""
         for child in ast.walk(test_node):
-            if self._has_decorator(child):
-                self.logger.debug(f"Skipping decorator: {ast.unparse(child)}")
-                continue
-            if not self._is_assert(child):
-                continue
-            else:
-                # Check if message is an f-string
-                msg_node = self._get_msg_node(child)
-                if msg_node is None:
-                    return False
-
-                #self.logger.debug(f"msg_node: {ast.dump(msg_node)}")
-
-                if msg_node and not isinstance(msg_node, ast.JoinedStr):
-                    return False
+            if isinstance(child, ast.Assert) and child.msg is None:
+                return False
         return True
 
 
@@ -298,24 +269,21 @@ class TestFileAnalyzer:
                 if msg_node and isinstance(msg_node, ast.JoinedStr):
                     for value in msg_node.values:
                         if isinstance(value, ast.FormattedValue):
-                            # This is a {variable} or {expression} part
-                            #self.logger.debug(f"Found dynamic content in f-string: {ast.dump(value)}")
                             return True
                     else:
                         return False
-
-                    # # Check if any values in the f-string are dynamic (not just constants)
-                    # has_dynamic_content = False
-                    # for value in msg_node.values:
-                    #     if isinstance(value, ast.FormattedValue):
-                    #         # This is a {variable} or {expression} part
-                    #         has_dynamic_content = True
-                    #         break
-                    # if not has_dynamic_content:
-                    #     return False
                 else:
                     return False
         return True
+
+    def _hash_nodes(self, nodes: ast.AST | list[ast.AST]) -> list[str]:
+        if isinstance(nodes, ast.AST):
+            nodes = [nodes]
+
+        hashes = [
+            hashlib.md5(ast.dump(node).encode('utf-8')).digest().hex() for node in nodes
+        ]
+        return hashes
 
     def _get_asserts(self, test_node) -> list[ast.Assert]:
         """Extract all assertion calls from a test method."""
@@ -335,8 +303,6 @@ class TestFileAnalyzer:
         for assertion in asserts:
             delattr(assertion, 'msg')
             self.logger.debug(f"Assertion without msg: {ast.dump(assertion)}")
-
-        import hashlib
 
         tests = [
             hashlib.md5(ast.dump(a).encode('utf-8')).digest().hex() for a in asserts
@@ -370,8 +336,6 @@ class TestFileAnalyzer:
             #     self.logger.debug(f"Assertion without msg: {ast.dump(assertion)}")
             # self.logger.debug("SHOULD_REACH_HERE")
 
-            import hashlib
-
             tests = [
                 hashlib.md5(ast.dump(a).encode('utf-8')).digest().hex() for a in asserts
             ]
@@ -385,62 +349,95 @@ class TestFileAnalyzer:
             self.logger.exception(f"Error checking duplicate assertions: {e}")
             return False
 
+    @staticmethod
+    def is_callable_value(node):
+        """Check if AST node represents callable value."""
+        return isinstance(node, (ast.Lambda, ast.FunctionDef, ast.AsyncFunctionDef))
+
     def _is_call_and_attribute(self, child: ast.AST) -> bool:
         return isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute)
 
+    def check_exactly_one_production_call(self, test_node) -> bool:
+        """Check for exactly one production method call."""
+        calls = self.check_single_production_call(test_node)
+        return calls == 1
 
-    def check_single_production_call(self, test_node) -> int:
+    # TODO Fix this test.
+    def check_single_production_call(self, test_node: ast.FunctionDef) -> int:
         """Check for at most one production method call."""
         self.logger.debug(f"Checking production calls in method {test_node.name}")
-        try:
-            production_calls = 0
+        calls = set()
+        repeated_calls = set()
+        fixture_params = self._get_fixture_params(test_node)
 
+        try:
             # Get decorator nodes to exclude them
             decorator_nodes = set()
             if hasattr(test_node, 'decorator_list'):
-                for decorator in test_node.decorator_list:
-                    for node in ast.walk(decorator):
-                        decorator_nodes.add(id(node))
+                self.logger.debug(f"Decorator list: {test_node.decorator_list}")
+                decorator_hashes = self._hash_nodes(test_node.decorator_list)
+                decorator_nodes.update(set(decorator_hashes))
+            self.logger.debug(f"Decorator nodes: {decorator_nodes}")
 
-            calls = set()
-            for child in ast.walk(test_node):
-                # Skip nodes that are part of decorators
-                if id(child) in decorator_nodes:
+            method_name = self._get_method_name(test_node)
+
+            # Count the number of times the production method name appears in the test body
+            for node in ast.walk(test_node):
+                if self._hash_nodes(node)[0] in decorator_nodes:
                     continue
 
-                method_name = self._get_method_name(test_node)
-                if not method_name:
+                if isinstance(node, ast.Call):
+                    callable_name = None
+                    if isinstance(node.func, ast.Attribute):
+                        callable_name = node.func.attr
+                    elif isinstance(node.func, ast.Name):
+                        callable_name = node.func.id
+
+                    if callable_name is not None and callable_name == method_name:
+                        # Get the line number of the call
+                        self.logger.debug(f"Found call to production method {callable_name} at line {node.lineno}")
+                        repeated_calls.add((node.lineno, callable_name))
+
+            self.logger.debug(f"Repeated calls: {repeated_calls}")
+
+            # Count the number of different production method calls via fixtures
+            for fixture in fixture_params:
+
+                if fixture is None or not fixture.strip():
                     continue
-                else:
-                    self.logger.debug(f"Method name: {method_name}")
-                    calls.add(method_name)
-            self.logger.debug(f"Production calls in method {test_node.name}: {calls}")
 
+                for node in ast.walk(test_node):
+                    # Skip nodes that are part of decorators
+                    if self._hash_nodes(node)[0] in decorator_nodes:
+                        continue
 
+                    
 
-            #     child_string = ast.unparse(child)
+                    if self._is_call_and_attribute(node):
+                        self.logger.debug(f"Found call node: {ast.dump(node)}")
+                        is_attr = check_fixture_attribute(self.tree, fixture, node.func.attr)
+                        # if is_attr and node.func.value.id == fixture:
+                        calls.add((node.lineno, node.func.attr))
+                        self.logger.debug(f"Found production call via fixture {fixture}: {node.func.attr} at line {node.lineno}")
+                    if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
+                        is_attr = check_fixture_attribute(self.tree, fixture, node.attr)
+                        if is_attr and node.value.id == fixture:
+                            self.logger.debug(f"Found attribute node: {ast.dump(node)}")
+                            calls.add((node.lineno, node.attr))
 
-            #     if (self._is_call_and_attribute(child) and
-            #         not child_string.startswith('assert') and
-            #         not child_string.startswith('@pytest')): # Ignore pytest decorators
-            #         self.logger.debug(f"Potential production call found: {child_string}")
-            #         calls.append(child)
-            #         production_calls += 1
+            self.logger.debug(f"Production calls in method {test_node.name}: {calls}\nNon-unique calls: {len(repeated_calls)}")
 
-            # self.logger.debug(f"Direct production calls in method {test_node.name}: {production_calls}")
+            if len(calls) > 1:
+                self.logger.debug(f"Multiple different production calls found: {calls}")
+                return len(calls)
+            else:
+                if len(repeated_calls) > 1:
+                    self.logger.debug(f"Repeated calls found for {method_name}: {repeated_calls}")
+                return len(repeated_calls)
 
-            # # Check if it came from a fixture
-            # for name, fixture in self.fixtures.items():
-            #     for stmt in fixture.body:
-            #         stmt_string = ast.unparse(stmt)
-            #         if method_name in stmt_string and child_string in stmt_string:
-            #             self.logger.debug(f"Production call found in fixture {name}: {stmt_string}")
-            #             production_calls += 1
-
-            # self.logger.debug(f"Total production calls in method {test_node.name}: {production_calls}")
         except Exception as e:
             self.logger.exception(f"Error checking production calls: {e}")
-        return len(calls)
+
 
     def check_has_production_calls(self, test_node) -> bool:
         """Check for at least one production method call."""
@@ -491,7 +488,7 @@ class TestFileAnalyzer:
             return True
 
         for name, fixture in self.fixtures.items():
-            self.logger.debug(f"Fixture {name}: {ast.dump(fixture)}")
+            #self.logger.debug(f"Fixture {name}: {ast.dump(fixture)}")
             for stmt in fixture.body:
                 stmt_string = ast.unparse(stmt)
                 if method_name in stmt_string:
@@ -526,7 +523,6 @@ class TestFileAnalyzer:
                     if isinstance(node, ast.Constant) and node.value not in allowed_literals:
                         self.logger.debug(f"Found magic literal in assertion test: {node.value}")
                         return False
-                self.logger.debug(f"assert: {ast.dump(child)}")
         return True
 
     def check_no_external_resources(self, test_node) -> bool:
@@ -605,7 +601,7 @@ class TestFileAnalyzer:
         return True
 
 
-    def check_docstring_format(self, test_node) -> bool:
+    def check_given_when_then_format(self, test_node) -> bool:
         """
         Check docstring format for GIVEN/WHEN/THEN structure. Docstring must contain
         - The keywords "GIVEN", "WHEN", and "THEN" in uppercase
@@ -815,7 +811,7 @@ class TestFileAnalyzer:
         """Check test class docstrings."""
         production_method_name = None
         docstring = ast.get_docstring(class_node)
-        if not docstring:
+        if docstring is None:
             return False
 
         for method in class_node.body:
@@ -827,6 +823,14 @@ class TestFileAnalyzer:
 
         # Check for required elements in class docstring
         return True if production_method_name is not None else False
+
+    def _get_fixture_params(self, test_node: ast.AST) -> list[str]:
+        """Get fixture parameters used in a test method."""
+        fixture_params = []
+        if test_node.args.args:
+            fixture_params = [arg.arg for arg in test_node.args.args if arg.arg != 'self']
+        self.logger.debug(f"Fixture parameters in {test_node.name}: {fixture_params}")
+        return fixture_params
 
 
     def check_no_partial_fixture_access(self, test_node: ast.AST) -> bool:
@@ -860,16 +864,12 @@ class TestFileAnalyzer:
             >>> def test_when_using_fixture_then_uses_one_attribute(my_fixture):
             ...     value = my_fixture.attr1
             ...     assert value == 420
-            >>> analyzer = TestFileAnalyzer('test_file.py')
+            >>> analyzer = _TestFileAnalyzer('test_file.py')
             assert analyzer.check_no_partial_fixture_access(test_node), 
                 f"{method_name}: Method only accesses parts of fixture instead of whole fixture"
         """
-        fixture_params = []
-        if test_node.args.args:
-            for arg in test_node.args.args:
-                if arg.arg != 'self':
-                    fixture_params.append(arg.arg)
-        
+        fixture_params = self._get_fixture_params(test_node)
+
         self.logger.debug(f"Fixture parameters in {test_node.name}: {fixture_params}")
 
         if not fixture_params:
@@ -882,7 +882,7 @@ class TestFileAnalyzer:
                 if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
                     if node.value.id == fixture:
                         used_attributes.add(node.attr)
-            
+
             self.logger.debug(f"Used attributes for {fixture}: {used_attributes}")
 
             # Find what attributes are declared in the fixture
@@ -894,7 +894,7 @@ class TestFileAnalyzer:
                         for target in node.targets:
                             if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
                                 declared_attributes.add(target.attr)
-            
+
             self.logger.debug(f"Declared attributes in {fixture}: {declared_attributes}")
 
             # Partial usage: fixture declares attributes that are not used in the test
@@ -950,7 +950,7 @@ class TestFileAnalyzer:
             if isinstance(node, ast.Call):
                 match node.func:
                     case ast.Name():
-                        # Check for file operations without proper error handling or existence checks
+                        # Check for file operations without error handling or existence checks
                         if node.func.id == 'open':
                             return False
                     case ast.Attribute():

@@ -16,8 +16,9 @@ from typing import List
 import pytest
 
 
-from analyzers.test_file_analyzer import TestFileAnalyzer
+from analyzers._test_file_analyzer import _TestFileAnalyzer
 from logger import logger
+from utils import read_file_content
 
 
 EXCLUDED_DIRS = {
@@ -42,25 +43,6 @@ def _read_first_line(test_file: str) -> str:
             return f.readline().strip()
     except Exception as e:
         raise IOError(f"Failed to read first line of {test_file}: {e}") from e
-
-
-def _read_file_content(test_file: str) -> str:
-    """Read the entire content of a test file.
-    
-    Args:
-        test_file (str): Path to the test file.
-        
-    Returns:
-        str: The entire content of the file.
-        
-    Raises:
-        IOError: If the file cannot be read.
-    """
-    try:
-        with open(test_file, 'r', encoding='utf-8') as f:
-            return f.read()
-    except Exception as e:
-        raise IOError(f"Failed to read {test_file}: {e}") from e
 
 
 def _get_test_files(file_patterns: List[str], excluded_dirs: set[str] = EXCLUDED_DIRS) -> List[str]:
@@ -114,7 +96,7 @@ def _get_test_methods() -> List[tuple[str, str, ast.FunctionDef]]:
     test_methods = []
     for test_file in test_files:
         try:
-            analyzer = TestFileAnalyzer(test_file)
+            analyzer = _TestFileAnalyzer(test_file)
             methods = analyzer.get_test_methods()
             for method_name, test_node in methods:
                 test_methods.append((test_file, method_name, test_node))
@@ -149,7 +131,7 @@ def _get_test_classes() -> List[tuple[str, str, ast.ClassDef]]:
     test_classes = []
     for test_file in test_files:
         try:
-            analyzer = TestFileAnalyzer(test_file)
+            analyzer = _TestFileAnalyzer(test_file)
             classes = analyzer.get_test_classes()
             for class_name, class_node in classes:
                 test_classes.append((test_file, class_name, class_node))
@@ -168,11 +150,11 @@ TEST_FILES = list({t[0] for t in TEST_METHODS})
 
 @pytest.fixture
 def make_analyzer():
-    """Factory fixture to create a TestFileAnalyzer instance."""
-    def _make_analyzer(test_file: str) -> TestFileAnalyzer:
+    """Factory fixture to create a _TestFileAnalyzer instance."""
+    def _make_analyzer(test_file: str) -> _TestFileAnalyzer:
         error = None
         try:
-            analyzer = TestFileAnalyzer(test_file)
+            analyzer = _TestFileAnalyzer(test_file)
             return analyzer
         except Exception as e:
             error = e
@@ -366,7 +348,7 @@ class TestForTestSmells:
         boolean = True
         analyzer = make_analyzer(test_file)
         assert analyzer.check_no_redundant_assertions(test_node, boolean), \
-            f"{method_name}: Method contains an assertion that is always true. Remove it."
+            f"{method_name}: Method contains the assertion 'assert True'. Remove it."
 
     def test_when_checking_redundant_assertions_then_no_always_false(
         self, make_analyzer, test_file, method_name, test_node):
@@ -378,7 +360,7 @@ class TestForTestSmells:
         boolean = False
         analyzer = make_analyzer(test_file)
         assert analyzer.check_no_redundant_assertions(test_node, boolean), \
-            f"{method_name}: Method contains an assertion that is always false. Remove it."
+            f"{method_name}: Method contains the assertion 'assert False'. Remove it."
 
     def test_when_checking_equality_then_no_str_repr(
         self, make_analyzer, test_file, method_name, test_node):
@@ -399,7 +381,7 @@ class TestForTestSmells:
         THEN the docstring should follow GIVEN/WHEN/THEN structure with production method reference
         """
         analyzer = make_analyzer(test_file)
-        assert analyzer.check_docstring_format(test_node), \
+        assert analyzer.check_given_when_then_format(test_node), \
             f"{method_name}: Docstring does not follow GIVEN/WHEN/THEN format with production method reference."
 
     def test_when_checking_test_naming_then_follows_convention(
@@ -577,7 +559,7 @@ class TestFileLevelChecks:
         PYTEST_MAIN = r'if\s+__name__\s*==\s*["\']__main__["\']\s*:\s+pytest\.main\(\[__file__\]\)'
 
         # Get the entire file content
-        file_content = _read_file_content(test_file)
+        file_content = read_file_content(test_file)
 
         pytest_main_in_file = re.search(PYTEST_MAIN, file_content, re.MULTILINE)
 

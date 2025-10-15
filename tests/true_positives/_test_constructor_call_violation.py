@@ -16,8 +16,8 @@ class TestConstructorCallViolation:
         WHEN checking for constructor calls
         THEN this method creates objects directly (violation)
         """
-        mock_obj = ProductionClass()  # Constructor call - violation
-        result = mock_obj.production_method()
+        production_class = ProductionClass()  # Constructor call - violation
+        result = production_class.production_method()
         assert result is not None, f"Expected result to not be None, got {result}"
 
 

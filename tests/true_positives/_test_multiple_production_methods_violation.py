@@ -25,7 +25,7 @@ class TestMultipleProductionMethodsViolation:
         y = 10
         z = 15
         result1 = sample_fixture.production_method(x, y)  # First method
-        result2 = sample_fixture.another_production_class(y, z)  # Second method- violation
+        result2 = sample_fixture.another_production_method(y, z)  # Second method- violation
         assert result1 == result2 + y + z, f"Expected {result1} to not be {result2}."
 
 
