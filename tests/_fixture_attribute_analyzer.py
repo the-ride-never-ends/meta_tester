@@ -1,6 +1,7 @@
 import ast
 from typing import Optional
 
+from logger import logger
 
 class FixtureAttributeAnalyzer(ast.NodeVisitor):
     """Analyze fixture attributes to determine if they're callable."""
@@ -25,6 +26,7 @@ class FixtureAttributeAnalyzer(ast.NodeVisitor):
             if isinstance(decorator, ast.Attribute):
                 if decorator.attr == "fixture":
                     return True
+        #logger.debug(f"Function '{func_node.name}' is not a fixture\ndecorator_list: {func_node.decorator_list}")
         return False
 
     def is_attribute_callable(self, fixture_name: str, attr_name: str) -> bool:
@@ -41,9 +43,10 @@ class FixtureAttributeAnalyzer(ast.NodeVisitor):
         if not fixture_name.strip():
             return False
 
+        #logger.debug(f"Checking if {fixture_name} is in {self.fixtures.keys()}")
         if fixture_name not in self.fixtures:
             raise ValueError(f"Fixture '{fixture_name}' not found")
-        
+
         fixture_node = self.fixtures[fixture_name]
         return_value = self._get_return_value(fixture_node)
         

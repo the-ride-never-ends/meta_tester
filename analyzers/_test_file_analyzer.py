@@ -87,9 +87,9 @@ class _TestFileAnalyzer:
                  logger: logging.Logger = logger,
                  check_fixture_attribute: Callable = check_fixture_attribute,
                  ):
+        self.logger = logger
         self.file_path = file_path
         self.source_code = read_file_content(file_path)
-        self.logger = logger
         self.check_fixture_attribute = check_fixture_attribute
         #self.check_method_length = check_method_length
         try:
@@ -100,6 +100,19 @@ class _TestFileAnalyzer:
             raise RuntimeError(f"Unexpected error parsing {file_path}: {e}") from e
 
         self.fixtures: dict[str, ast.FunctionDef] = FixtureAnalyzer(tree=self.tree, file_path=file_path, logger=logger).fixtures
+        self.third_party_imports: set[str] = self._get_imports()
+        self.builtins: set[str] = self._get_builtins()
+        self.decorators: set[str] = self._get_decorators()
+        self.builtin_attributes: set[str] = self._get_attributes_of_builtins()
+
+
+        # Remove pytest from third-party imports if present
+        if 'pytest' in self.third_party_imports:
+            self.third_party_imports.remove('pytest')
+        self.logger.debug(f"Third-party imports at __init__: {self.third_party_imports}")
+        self.logger.debug(f"Decorators for file: {self.decorators}")
+        # self.logger.debug(f"Built-in names: {self.builtins}")
+        # self.logger.debug(f"Built-in attributes: {self.builtin_attributes}")
 
     def perform_test(self, name: str, *args) -> Any:
         class_dict = {
@@ -111,6 +124,45 @@ class _TestFileAnalyzer:
         else:
             raise AttributeError(f"Test method {name} not found in _TestFileAnalyzer.")
  
+    def _get_builtins(self) -> set:
+        # Get all built-in names
+        direct_builtins = set((sorted(set(dir(builtins)))))
+        # Get all the imports into builtins too.
+        imported_builtins = set()
+        for name in direct_builtins:
+            try:
+                obj = getattr(builtins, name)
+                if hasattr(obj, '__module__') and obj.__module__ == 'builtins':
+                    imported_builtins.add(name)
+            except Exception:
+                continue
+        imported_builtins = sorted(imported_builtins)
+        self.logger.debug(f"Direct built-ins: {direct_builtins}")
+        self.logger.debug(f"Imported built-ins: {imported_builtins}")
+        all_builtins = direct_builtins.union(imported_builtins)
+        return all_builtins
+
+
+    def _get_attributes_of_builtins(self) -> set[str]:
+        """Get all attributes of built-in types."""
+        attributes = []
+        for builtin_name in dir(builtins):
+            try:
+                builtin_obj = getattr(builtins, builtin_name)
+                for attr in dir(builtin_obj):
+                    attributes.append(attr)
+            except Exception as e:
+                self.logger.debug(f"Could not get attributes of builtin {builtin_name}: {e}")
+        assert isinstance(attributes, list), f"Attributes list should be list, got {type(attributes)}"
+        self.logger.debug(f"Attributes list before sorting: {attributes}")
+        attributes = sorted(attributes) # TODO: Hack to include 'read' method of file objects. Should be fixed more robustly.
+        assert isinstance(attributes, list), f"Attributes list should be list after sorting, got {type(attributes)}"
+        attributes.append('read')
+        self.logger.debug(f"Built-in attributes: {attributes}")
+        attributes = set(attributes)
+        self.logger.debug(f"Set of Built-in attributes: {attributes}")
+        return attributes
+
     def get_test_methods(self):
         """Get all test methods in the file."""
         test_methods = []
@@ -139,12 +191,25 @@ class _TestFileAnalyzer:
                 test_classes.append((node.name, node))
         return test_classes
 
+    def _get_decorators(self) -> set[str]:
+        """Get all decorators used in the file."""
+        decorators = set()
+        for node in ast.walk(self.tree):
+            if isinstance(node, (ast.FunctionDef, ast.ClassDef)):
+                if hasattr(node, 'decorator_list'):
+                    for decorator in node.decorator_list:
+                        if isinstance(decorator, ast.Name):
+                            decorators.add(decorator.id)
+                        elif isinstance(decorator, ast.Attribute):
+                            decorators.add(decorator.attr)
+        return decorators
+
     @staticmethod
     def _is_function_call(child: ast.AST) -> bool:
         """Check if AST node is a function call."""
         return isinstance(child, ast.Call) and isinstance(child.func, ast.Name)
 
-    def check_method_length(self, test_node) -> int:
+    def check_method_length(self, test_node: ast.AST) -> int:
         """Check if method is longer than 10 lines (excluding docstrings)."""
         start_line = test_node.lineno
         end_line = test_node.end_lineno
@@ -159,7 +224,7 @@ class _TestFileAnalyzer:
         total_lines = end_line - start_line + 1 - docstring_lines
         return total_lines
 
-    def check_single_assertion(self, test_node) -> int:
+    def check_single_assertion(self, test_node: ast.AST) -> int:
         """Check for exactly one assertion in a test method."""
         assertion_count = 0
         for child in ast.walk(test_node):
@@ -186,12 +251,12 @@ class _TestFileAnalyzer:
         return True
 
 
-    def check_no_exception_handling(self, test_node) -> int:
+    def check_no_exception_handling(self, test_node: ast.AST) -> int:
         """Check for absence of try/except blocks in test methods."""
         return self.check_ast_node_not_present(test_node, ast.Try)
 
 
-    def check_no_constructor_calls(self, test_node) -> bool:
+    def check_no_constructor_calls(self, test_node: ast.AST) -> bool:
         """Check for absence of constructor calls in test methods."""
         for child in ast.walk(test_node):
             if self._is_function_call(child) and child.func.id[0].isupper():
@@ -242,7 +307,7 @@ class _TestFileAnalyzer:
         return child.msg
 
 
-    def check_assertion_for_f_string_messages(self, test_node) -> bool:
+    def check_assertion_for_f_string_messages(self, test_node: ast.AST) -> bool:
         """Check that assertions have descriptive f-string messages."""
         for child in ast.walk(test_node):
             if isinstance(child, ast.Assert) and child.msg is None:
@@ -250,7 +315,7 @@ class _TestFileAnalyzer:
         return True
 
 
-    def check_assertion_f_string_has_dynamic_content(self, test_node) -> bool:
+    def check_assertion_f_string_has_dynamic_content(self, test_node: ast.AST) -> bool:
         """Check that f-string messages contain dynamic content (variables/expressions)."""
 
         for child in ast.walk(test_node):
@@ -285,15 +350,11 @@ class _TestFileAnalyzer:
         ]
         return hashes
 
-    def _get_asserts(self, test_node) -> list[ast.Assert]:
+    def _get_asserts(self, test_node: ast.AST) -> list[ast.Assert]:
         """Extract all assertion calls from a test method."""
-        asserts = []
-        for child in ast.walk(test_node):
-            if self._is_assert(child):
-                asserts.append(child)
-        return asserts
+        return [child for child in ast.walk(test_node) if self._is_assert(child)]
 
-    def check_no_duplicate_assertions(self, test_node) -> bool:
+    def check_no_duplicate_assertions(self, test_node: ast.AST) -> bool:
         """Check for absence of duplicate assertion patterns."""
         asserts = self._get_asserts(test_node)
 
@@ -304,9 +365,7 @@ class _TestFileAnalyzer:
             delattr(assertion, 'msg')
             self.logger.debug(f"Assertion without msg: {ast.dump(assertion)}")
 
-        tests = [
-            hashlib.md5(ast.dump(a).encode('utf-8')).digest().hex() for a in asserts
-        ]
+        tests = self._hash_nodes(self, asserts)
 
         self.logger.debug(f"Assertion tests in method {test_node.name}: {tests}")
 
@@ -357,7 +416,7 @@ class _TestFileAnalyzer:
     def _is_call_and_attribute(self, child: ast.AST) -> bool:
         return isinstance(child, ast.Call) and isinstance(child.func, ast.Attribute)
 
-    def check_exactly_one_production_call(self, test_node) -> bool:
+    def check_exactly_one_production_call(self, test_node: ast.AST) -> bool:
         """Check for exactly one production method call."""
         calls = self.check_single_production_call(test_node)
         return calls == 1
@@ -411,21 +470,39 @@ class _TestFileAnalyzer:
                     if self._hash_nodes(node)[0] in decorator_nodes:
                         continue
 
-                    
-
                     if self._is_call_and_attribute(node):
                         self.logger.debug(f"Found call node: {ast.dump(node)}")
+                        node_id = node.func.value.id
+                        self.logger.debug(f"node_id: {node_id}, fixture: {fixture}")
+
+                        # If the object being called is a third-party import or builtin, skip
+                        if node_id in self.third_party_imports:
+                            continue
+                        self.logger.debug("node_id: " + str(node_id))
+                        if node_id in self.builtins:
+                            continue
+
                         is_attr = check_fixture_attribute(self.tree, fixture, node.func.attr)
-                        # if is_attr and node.func.value.id == fixture:
+
+                        if hasattr(node.func, 'attr'):
+                            attr_name = node.func.attr
+                            self.logger.debug(f"attr_name: {attr_name}")
+                            if attr_name in self.builtins:
+                                continue
+                            if attr_name in self.builtin_attributes:
+                                continue
+
                         calls.add((node.lineno, node.func.attr))
                         self.logger.debug(f"Found production call via fixture {fixture}: {node.func.attr} at line {node.lineno}")
                     if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name):
                         is_attr = check_fixture_attribute(self.tree, fixture, node.attr)
-                        if is_attr and node.value.id == fixture:
-                            self.logger.debug(f"Found attribute node: {ast.dump(node)}")
-                            calls.add((node.lineno, node.attr))
+                        if is_attr:
 
-            self.logger.debug(f"Production calls in method {test_node.name}: {calls}\nNon-unique calls: {len(repeated_calls)}")
+                            if node.value.id == fixture:
+                                self.logger.debug(f"Found attribute node: {ast.dump(node)}")
+                                calls.add((node.lineno, node.attr))
+
+            self.logger.debug(f"Production calls in method '{test_node.name}': {calls}\nNon-unique calls: {len(repeated_calls)}")
 
             if len(calls) > 1:
                 self.logger.debug(f"Multiple different production calls found: {calls}")
@@ -439,7 +516,7 @@ class _TestFileAnalyzer:
             self.logger.exception(f"Error checking production calls: {e}")
 
 
-    def check_has_production_calls(self, test_node) -> bool:
+    def check_has_production_calls(self, test_node: ast.AST) -> bool:
         """Check for at least one production method call."""
         # Only walk the body, not decorators
         for stmt in test_node.body:
@@ -474,7 +551,7 @@ class _TestFileAnalyzer:
         return None
 
 
-    def check_no_fake_tests(self, test_node) -> bool:
+    def check_no_fake_tests(self, test_node: ast.AST) -> bool:
         """Check for absence of mocking the method under test."""
         banned_calls = [
             'mock', 'patch', 'asyncmock', 'magicmock', 'sentinel',
@@ -500,7 +577,7 @@ class _TestFileAnalyzer:
         return True
 
 
-    def check_not_skipped(self, test_node) -> bool:
+    def check_not_skipped(self, test_node: ast.AST) -> bool:
         """Check for absence of skipped/ignored tests."""
         banned_decorators = ['skip', 'skipif']
 
@@ -513,7 +590,7 @@ class _TestFileAnalyzer:
                     return False
         return True
 
-    def check_no_magic_literals(self, test_node) -> bool:
+    def check_no_magic_literals(self, test_node: ast.AST) -> bool:
         """Check for absence of magic numbers/strings in assertions."""
         allowed_literals = [True, False, None]
         for child in ast.walk(test_node):
@@ -525,9 +602,10 @@ class _TestFileAnalyzer:
                         return False
         return True
 
-    def check_no_external_resources(self, test_node) -> bool:
-        """Check for absence of real external resources."""
-        banned_ast_nodes = (ast.Import, ast.ImportFrom)
+    def _get_external_resources(self, test_node: ast.AST) -> list[str]:
+        """
+        Extract external resource calls (e.g. calls to files, database, etc.) from a test method.
+        """
         banned_calls = [
             'open', 'requests', 'urllib', 'socket', 'database', 
             'db', 'http', 'https', 'ftp', 'ssh', 'telnet', 'smtp', 
@@ -553,26 +631,40 @@ class _TestFileAnalyzer:
         ]
         external_resources_list = []
         for child in ast.walk(test_node):
-            if isinstance(child, banned_ast_nodes):
-                external_resources_list.append('import')
             if isinstance(child, ast.Call):
                 call_name = ""
-                if isinstance(child.func, ast.Name):
-                    # Simple function call like requests()
-                    call_name = child.func.id.lower()
-                elif isinstance(child.func, ast.Attribute):
-                    # Attribute call like requests.get() or module.func()
-                    if isinstance(child.func.value, ast.Name):
-                        call_name = f"{child.func.value.id}.{child.func.attr}".lower()
-                    else:
-                        call_name = child.func.attr.lower()
+                match child.func:
+                    case ast.Name():
+                        # Simple function call like requests()
+                        call_name = child.func.id.lower()
+                        self.logger.debug(f"Found call from child.func and ast.Name: {call_name}")
+                    case ast.Attribute():
+                        # Attribute call like requests.get() or module.func()
+                        # First, check if it's from a third-party import
+                        # if call_name in self.imports:
+                        #     call_name = child.func.attr.lower()
 
-                for banned_call in banned_calls:
-                    if banned_call in call_name:
-                        external_resources_list.append(banned_call)
+                        if isinstance(child.func.value, ast.Name):
+                            call_name = f"{child.func.value.id}.{child.func.attr}".lower()
+                            self.logger.debug(f"Found call from child.func.value and ast.Name: {call_name}")
+                        else:
+                            call_name = child.func.attr.lower()
+                            self.logger.debug(f"Found call from child.func.attr: {call_name}")
+                calls = [call for call in banned_calls if call in call_name]
+                external_resources_list.extend(calls)
         return external_resources_list
 
-    def check_no_print_logging(self, test_node) -> bool:
+    def check_no_external_resources(self, test_node: ast.AST) -> bool:
+        """Check for absence of real external resources."""
+        banned_ast_nodes = (ast.Import, ast.ImportFrom)
+        external_resources_list = self._get_external_resources(test_node)
+
+        for child in ast.walk(test_node):
+            if isinstance(child, banned_ast_nodes):
+                external_resources_list.append('import')
+        return external_resources_list
+
+    def check_no_print_logging(self, test_node: ast.AST) -> bool:
         """Check for absence of print/logging statements."""
         banned_calls = ['print', 'log', 'logger', 'logging']
         for child in ast.walk(test_node):
@@ -592,7 +684,7 @@ class _TestFileAnalyzer:
         return True
 
 
-    def check_no_sensitive_equality(self, test_node) -> bool:
+    def check_no_sensitive_equality(self, test_node: ast.AST) -> bool:
         """Check for absence of str/repr usage in test methods."""
         banned_calls = ['str', 'repr']
         for child in ast.walk(test_node):
@@ -601,7 +693,7 @@ class _TestFileAnalyzer:
         return True
 
 
-    def check_given_when_then_format(self, test_node) -> bool:
+    def check_given_when_then_format(self, test_node: ast.AST) -> bool:
         """
         Check docstring format for GIVEN/WHEN/THEN structure. Docstring must contain
         - The keywords "GIVEN", "WHEN", and "THEN" in uppercase
@@ -639,10 +731,6 @@ class _TestFileAnalyzer:
             return False
 
 
-    @staticmethod
-    def _get_builtins() -> set:
-        # Get all built-in names
-        return set(dir(builtins))
 
 
     def _get_imports(self) -> set:
@@ -680,14 +768,25 @@ class _TestFileAnalyzer:
                     break
             else:
                 self.logger.debug(f"Excluding import '{name}' with path: {path}")
+        # self.logger.debug(f"Third-party imports: {filtered_imports}")
         return filtered_imports
 
 
-    def _is_local(self, name: str, builtins: set[str], imports: set[str]) -> bool:
-        return True if name not in builtins or name not in imports or name.startswith('_') else True
+    def _is_local(self, name: str) -> bool:
+        if not self.third_party_imports:
+            return True
+        if name in self.builtins:
+            return False
+        if name in self.builtin_attributes:
+            return False
+        if name in self.third_party_imports:
+            return False
+        if name.startswith('_'):
+            return False
+        return True
 
 
-    def _get_method_name(self, test_node) -> str:
+    def _get_method_name(self, test_node: ast.AST) -> str:
         """
         Extract the name of the production callable (method or function) being tested.
 
@@ -700,9 +799,6 @@ class _TestFileAnalyzer:
         Returns:
             str: Name of the production callable being called, or "NOT FOUND" if not found
         """
-        third_party_imports = self._get_imports()
-        builtins = self._get_builtins()
-
         # Build symbol table for classes vs functions
         classes = set()
         functions = set()
@@ -726,15 +822,15 @@ class _TestFileAnalyzer:
                                 callable_name = node.value.func.attr
                                 # If the attribute's id is a third-party import, skip
                                 obj_id = node.value.func.value.id
-                                if obj_id in third_party_imports:
+                                if obj_id in self.third_party_imports:
                                     continue
 
-                                if self._is_local(callable_name, builtins, third_party_imports):
+                                if self._is_local(callable_name):
                                     if not method_candidate:
                                         method_candidate = callable_name
                             case ast.Name():
                                 callable_name = node.value.func.id
-                                if self._is_local(callable_name, builtins, third_party_imports):
+                                if self._is_local(callable_name):
                                     if callable_name in functions:
                                         if not function_candidate:
                                             function_candidate = callable_name
@@ -763,15 +859,15 @@ class _TestFileAnalyzer:
                             callable_name = child.func.attr
                             self.logger.debug(f"Found attribute call: {ast.dump(child)}")
                             # obj_id = node.value.func.value.id
-                            # if obj_id in third_party_imports:
+                            # if obj_id in self.third_party_imports:
                             #     continue
 
-                            if self._is_local(callable_name, builtins, third_party_imports):
+                            if self._is_local(callable_name):
                                 if not method_candidate:
                                     method_candidate = callable_name
                         case ast.Name():
                             callable_name = child.func.id
-                            if self._is_local(callable_name, builtins, third_party_imports):
+                            if self._is_local(callable_name):
                                 if callable_name in functions:
                                     if not function_candidate:
                                         function_candidate = callable_name
@@ -906,19 +1002,18 @@ class _TestFileAnalyzer:
 
         return True
 
-    def check_local_declarations(self, test_node) -> list[str]:
+    def check_local_declarations_in_tests(self, test_node: ast.AST) -> list[str]:
         """Check for tests that declare callables locally instead of referencing them."""
         # TODO: Add this to the test suite.
         declared_callables = []
         for child in ast.walk(test_node):
             match child:
-                case ast.FunctionDef() if child.name.startswith('test_'):
-                    declared_callables.append(child.name)
-                case ast.ClassDef() if child.name.startswith('Test'):
-                    declared_callables.append(child.name)
+                case ast.FunctionDef() | ast.ClassDef(): 
+                    if not child.name.startswith(('test_', 'Test')):
+                        declared_callables.append(child.name)
         return declared_callables
 
-    def check_no_private_attribute_access(self, test_node) -> list[str]:
+    def check_no_private_attribute_access(self, test_node: ast.AST) -> list[str]:
         """Check for tests that access private attributes or methods."""
         private_callables = []
         for child in ast.walk(test_node):
@@ -930,7 +1025,7 @@ class _TestFileAnalyzer:
         return private_callables
 
 
-    def check_no_resource_optimism(self, test_node) -> bool:
+    def check_no_resource_optimism(self, test_node: ast.AST) -> bool:
         """Check for tests that assume external resource availability without checking."""
         # TODO This should be changed to test fixtures, mocks, tempfiles, etc. instead of the tests themselves.
         # Since these will be flagged for tests that use external resources anyways.

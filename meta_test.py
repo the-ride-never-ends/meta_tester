@@ -68,6 +68,20 @@ def _get_test_files(file_patterns: List[str], excluded_dirs: set[str] = EXCLUDED
 
     return list(set(test_files))
 
+analyzers: dict[str, _TestFileAnalyzer] = {}
+
+def _get_analyzer_for_file(test_file: str) -> _TestFileAnalyzer:
+    """Get or create a _TestFileAnalyzer for the given test file."""
+    global analyzers
+    if test_file not in analyzers:
+        try:
+            analyzers[test_file] = _TestFileAnalyzer(test_file)
+        except Exception as e:
+            logger.exception(e)
+            raise RuntimeError(f"Failed to create analyzer for {test_file}: {e}") from e
+    analyzer = analyzers[test_file]
+    return analyzer
+
 
 # Get test files and methods for parameterization
 def _get_test_methods() -> List[tuple[str, str, ast.FunctionDef]]:
@@ -95,12 +109,13 @@ def _get_test_methods() -> List[tuple[str, str, ast.FunctionDef]]:
 
     test_methods = []
     for test_file in test_files:
+        analyzer = _get_analyzer_for_file(test_file)
         try:
-            analyzer = _TestFileAnalyzer(test_file)
             methods = analyzer.get_test_methods()
             for method_name, test_node in methods:
                 test_methods.append((test_file, method_name, test_node))
         except Exception as e:
+            logger.exception(e)
             raise RuntimeError(
                 f"Failed to parse {test_file} for test methods: {e}"
             ) from e
@@ -130,8 +145,8 @@ def _get_test_classes() -> List[tuple[str, str, ast.ClassDef]]:
 
     test_classes = []
     for test_file in test_files:
+        analyzer = _get_analyzer_for_file(test_file)
         try:
-            analyzer = _TestFileAnalyzer(test_file)
             classes = analyzer.get_test_classes()
             for class_name, class_node in classes:
                 test_classes.append((test_file, class_name, class_node))
@@ -154,7 +169,7 @@ def make_analyzer():
     def _make_analyzer(test_file: str) -> _TestFileAnalyzer:
         error = None
         try:
-            analyzer = _TestFileAnalyzer(test_file)
+            analyzer = _get_analyzer_for_file(test_file)
             return analyzer
         except Exception as e:
             error = e

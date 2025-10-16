@@ -390,6 +390,8 @@ def _meta_tester_output(test_file: Path):
     """Fixture that runs meta-tester and returns output for a specific test file."""
     returncode, stdout, stderr = run_meta_tester_on_file(test_file)
     failed_tests: list[str] = extract_failed_test_names(stdout)
+    stars = "*" * 10
+    #logger.debug(f"{stars}\nstdout:\n{stdout}\n{stars}")
     return {
         'returncode': returncode,
         'stdout': stdout,

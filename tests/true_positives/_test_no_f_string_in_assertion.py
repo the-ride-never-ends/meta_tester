@@ -2,6 +2,14 @@
 import pytest
 
 
+from .._production_class import ProductionClass
+
+
+@pytest.fixture
+def sample_fixture():
+    return ProductionClass()
+
+
 class TestNoFStringInAssertion:
     """Test class to demonstrate no f-string usage in assertions for production_method."""
 
