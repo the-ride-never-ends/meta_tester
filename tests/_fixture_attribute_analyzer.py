@@ -9,7 +9,21 @@ class FixtureAttributeAnalyzer(ast.NodeVisitor):
     def __init__(self, tree: ast.AST | str):
         self.tree = tree if isinstance(tree, ast.AST) else ast.parse(tree)
         self.fixtures = {}
+        self.parameterizations = set()
         self._collect_fixtures()
+
+    def _get_parameterizations(self, func_node: ast.FunctionDef) -> None:
+        """Get argument names that are defined in a parameterization decorator."""
+        if hasattr(func_node, 'decorator_list'):
+            for decorator in func_node.decorator_list:
+                if isinstance(decorator, ast.Call):
+                    if (isinstance(decorator.func, ast.Attribute) and 
+                        decorator.func.attr == "parametrize"):
+                        # Get the parameter names
+                        name = decorator.args[0].value
+                        names = [n.strip() for n in name.split(',')] if ',' in name else [name.strip()]
+                        self.parameterizations.update(names)
+
 
     def _collect_fixtures(self):
         """Collect all fixture definitions."""
@@ -17,6 +31,9 @@ class FixtureAttributeAnalyzer(ast.NodeVisitor):
             if isinstance(node, ast.FunctionDef):
                 if self._has_fixture_decorator(node):
                     self.fixtures[node.name] = node
+            self._get_parameterizations(node)
+        self.parameterizations.add("request")  # Common fixture parameter
+
 
     def _has_fixture_decorator(self, func_node: ast.FunctionDef) -> bool:
         """Check if function has pytest.fixture decorator."""
@@ -41,6 +58,10 @@ class FixtureAttributeAnalyzer(ast.NodeVisitor):
             True if attribute is callable, False otherwise.
         """
         if not fixture_name.strip():
+            return False
+
+        # Skip parameterized fixtures
+        if fixture_name in self.parameterizations:
             return False
 
         #logger.debug(f"Checking if {fixture_name} is in {self.fixtures.keys()}")

@@ -11,7 +11,7 @@ class TestNoProductionCallsViolation:
 
     def test_when_checking_production_calls_then_violates_has_production_calls_rule(self):
         """
-        GIVEN a test method
+        GIVEN a test method for 'production_method'
         WHEN checking production calls
         THEN this method has no production calls (violation)
         """

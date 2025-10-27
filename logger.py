@@ -4,9 +4,9 @@ from pathlib import Path
 
 _THIS_DIR = Path(__file__).parent.resolve()
 
-def _make_logger():
+def make_logger(name: str = __name__) -> logging.Logger:
 
-    logger = logging.getLogger(__name__)
+    logger = logging.getLogger(name)
     logger.setLevel(logging.DEBUG)
 
     log_folder = _THIS_DIR / "logs"
@@ -25,5 +25,5 @@ def _make_logger():
 
     return logger
 
-logger = _make_logger()
+logger = make_logger()
 

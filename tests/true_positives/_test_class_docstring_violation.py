@@ -15,7 +15,7 @@ def sample_fixture():
 class TestClassDocstringViolation:
     """Test class docstring violation - no mention of method being tested."""
 
-    def test_when_checking_class_docstring_then_mentions_production_class(self, sample_fixture):
+    def test_when_checking_class_docstring_then_mentions_production_method(self, sample_fixture):
         """
         GIVEN a test class for 'production_method'
         WHEN checking class docstring

@@ -7,20 +7,27 @@ This file demonstrates proper testing practices and should not trigger any viola
 import pytest
 from unittest.mock import Mock
 
+class Calculator:
+    """A simple calculator class with basic arithmetic operations."""
+
+    def add(self, a, b):
+        """Returns the sum of a and b."""
+        return a + b
+
+    def subtract(self, a, b):
+        """Returns the difference of a and b."""
+        return a - b
+
 
 @pytest.fixture
 def calculator_fixture():
     """Fixture providing a Calculator instance for testing."""
-    mock_calculator = Mock()
-    mock_calculator.add.return_value = 8  # Default return for add
-    mock_calculator.subtract.return_value = 7  # Default return for subtract
-    return mock_calculator
+    return Calculator()
 
 
 
 class TestCalculatorAddMethod:
-    """Test class for the Calculator.add method functionality."""
-
+    """Test class for the Calculator.addition method functionality."""
 
     def test_when_adding_positive_numbers_then_returns_int(self, calculator_fixture):
         """
@@ -31,7 +38,7 @@ class TestCalculatorAddMethod:
         FIVE = 5
         THREE = 3
 
-        result = calculator_fixture.add(FIVE, THREE)
+        result = calculator_fixture.addition(FIVE, THREE)
 
         assert isinstance(result, int), f"Expected {result} to be an integer, got {type(result).__name__} instead."
 
@@ -45,7 +52,7 @@ class TestCalculatorAddMethod:
         THREE = 3
         EXPECTED_SUM = 8
 
-        result = calculator_fixture.add(FIVE, THREE)
+        result = calculator_fixture.addition(FIVE, THREE)
 
         assert result == EXPECTED_SUM, f"Expected {result} to equal {EXPECTED_SUM}"
 
@@ -58,7 +65,7 @@ class TestCalculatorAddMethod:
         NEGATIVE_FIVE = -5
         NEGATIVE_THREE = -3
 
-        result = calculator_fixture.add(NEGATIVE_FIVE, NEGATIVE_THREE)
+        result = calculator_fixture.addition(NEGATIVE_FIVE, NEGATIVE_THREE)
 
         assert result < 0, f"Expected result to be negative, but got {result}"
 
@@ -72,7 +79,7 @@ class TestCalculatorAddMethod:
         SEVEN = 7
 
         with pytest.raises(TypeError, match="unsupported operand type"):
-            result = calculator_fixture.add(ZERO, SEVEN)
+            result = calculator_fixture.addition(ZERO, SEVEN)
 
 
 class TestCalculatorSubtractMethod:

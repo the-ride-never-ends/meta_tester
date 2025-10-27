@@ -294,7 +294,7 @@ def _map_file_to_expected_failure() -> Dict[str, str]:
         "_test_always_true_assertion_violation.py": "test_when_checking_redundant_assertions_then_no_always_true",
         "_test_bad_docstring_format_violation.py": "test_when_checking_docstring_format_then_given_when_then_structure",
         "_test_bad_naming_convention_violation.py": "test_bad_naming_convention",
-        "_test_class_docstring_violation.py": "test_when_checking_class_docstring_then_mentions_production_class",
+        "_test_class_docstring_violation.py": "test_when_checking_class_docstring_then_mentions_production_method",
         "_test_constructor_call_violation.py": "test_when_checking_constructor_calls_then_no_constructor_initialization",
         # "_test_empty_method_violation.py": "test_when_checking_method_body_then_not_empty", NOTE covered by check production call tests
         "_test_external_resources_violation.py": "test_when_checking_external_resources_then_no_real_resources",
@@ -302,6 +302,7 @@ def _map_file_to_expected_failure() -> Dict[str, str]:
         "_test_fixture_usage_violation.py": "test_when_checking_fixture_usage_then_uses_whole_fixture",
         "_test_for_loop_violation.py": "test_when_checking_control_flow_then_violates_no_for_loops_rule",
         "_test_if_statement_violation.py": "test_when_checking_control_flow_then_violates_no_if_statements_rule",
+        "_test_list_comprehension_violation.py":"test_when_checking_test_then_no_conditional_logic",
         "_test_magic_strings_violation.py": "test_when_checking_magic_literals_then_violates_no_magic_strings_rule",
         "_test_magic_numbers_violation.py": "test_when_checking_magic_literals_then_no_magic_numbers_or_strings",
         "_test_method_length_violation.py": "test_when_checking_method_length_then_under_10_lines",
@@ -310,8 +311,8 @@ def _map_file_to_expected_failure() -> Dict[str, str]:
         "_test_missing_shebang_violation.py": "test_when_checking_test_file_then_contains_shebang",
         "_test_mocking_method_under_test_violation.py": "test_when_checking_mocking_then_no_fake_tests",
         "_test_multiple_assertions_violation.py": "test_when_checking_assertions_then_exactly_one_assertion",
-        "_test_multiple_production_calls_violation.py": "test_when_checking_production_calls_then_at_most_one_call",
-        "_test_multiple_production_class_violation.py": "test_when_checking_production_calls_then_at_most_one_call",
+        "_test_multiple_production_calls_violation.py": "test_when_checking_production_calls_then_exactly_one_call",
+        "_test_multiple_production_class_violation.py": "test_when_checking_production_calls_then_exactly_one_call",
         "_test_no_f_string_in_assertion.py": "test_when_checking_assertion_messages_then_has_f_strings_with_dynamic_content",
         "_test_no_production_calls_violation.py": "test_when_checking_production_calls_then_has_production_calls",
         "_test_print_statement_violation.py": "test_when_checking_print_logging_then_no_output_statements",
@@ -326,7 +327,7 @@ def _map_file_to_expected_failure() -> Dict[str, str]:
     actual_mappings = _get_file_mappings()
     mappings.update(actual_mappings)
     # NOTE Bad naming convention test is special case
-    mappings["_test_bad_naming_convention_violation.py"] = "test_when_checking_test_naming_then_follows_convention"
+    mappings["_test_bad_naming_convention_violation.py"] = "test_when_checking_test_naming_then_follows_test_when_x_then_y_convention"
     del mappings["_test_first_duplicate_assertion.py"]
     return mappings
 
@@ -361,18 +362,16 @@ def expected_failures():
 def expected_non_exclusive_failures(key: str) -> Dict[str, set[str]]:
     return_dict =  {
         "_test_empty_method_violation.py": {
-            'test_when_checking_production_calls_then_at_most_one_call', 
+            'test_when_checking_production_calls_then_exactly_one_call', 
             'test_when_checking_assertions_then_exactly_one_assertion',
-            'test_when_checking_docstring_format_then_given_when_then_structure',
             "test_when_checking_method_body_then_not_empty", 
             "test_when_checking_production_calls_then_has_production_calls",
-            'test_when_checking_class_docstring_then_mentions_production_class'
+            'test_when_checking_class_docstring_then_mentions_production_method'
         },
         "_test_no_production_calls_violation.py":{
-            'test_when_checking_production_calls_then_at_most_one_call', 
+            'test_when_checking_production_calls_then_exactly_one_call', 
             'test_when_checking_production_calls_then_has_production_calls', 
-            'test_when_checking_docstring_format_then_given_when_then_structure', 
-            'test_when_checking_class_docstring_then_mentions_production_class'
+            'test_when_checking_class_docstring_then_mentions_production_method'
         },
         "_test_resource_assumption_violation.py": {
             'test_when_checking_resource_assumptions_then_no_resource_optimism', 

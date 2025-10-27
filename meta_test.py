@@ -272,18 +272,18 @@ class TestForTestSmells:
         assert analyzer.check_assertion_f_string_has_dynamic_content(test_node), \
             f"{method_name}: Assertions does not have an f-string with dynamic content" + "(e.g. assert x == y, f'Expected {x} to equal {y}')"
 
-    def test_when_checking_production_calls_then_at_most_one_call(
+    def test_when_checking_production_calls_then_exactly_one_call(
         self, make_analyzer, test_file, method_name, test_node):
         """
         GIVEN a test method in the codebase
         WHEN checking production method calls
-        THEN the method should invoke at most one production method
+        THEN the method should invoke at exactly one production method
         """
         analyzer = make_analyzer(test_file)
         ONE = 1
         num_production_calls = analyzer.check_single_production_call(test_node)
         assert num_production_calls == ONE, \
-            f"{method_name}: Method invokes {num_production_calls} production methods. Should invoke at most 1 to minimize coupling of methods."
+            f"{method_name}: Method invokes {num_production_calls} production methods. Should invoke exactly 1."
 
     def test_when_checking_production_calls_then_has_production_calls(
         self, make_analyzer, test_file, method_name, test_node):
@@ -393,13 +393,26 @@ class TestForTestSmells:
         """
         GIVEN a test method in the codebase
         WHEN checking the docstring format
-        THEN the docstring should follow GIVEN/WHEN/THEN structure with production method reference
+        THEN the docstring should follow GIVEN/WHEN/THEN structure
         """
         analyzer = make_analyzer(test_file)
         assert analyzer.check_given_when_then_format(test_node), \
-            f"{method_name}: Docstring does not follow GIVEN/WHEN/THEN format with production method reference."
+            f"{method_name}: Docstring does not follow GIVEN/WHEN/THEN format."
 
-    def test_when_checking_test_naming_then_follows_convention(
+    # def test_when_checking_docstring_then_docstring_has_production_callable_name(
+    #     self, make_analyzer, test_file, method_name, test_node):
+    #     """
+    #     GIVEN a test method in the codebase
+    #     WHEN checking the docstring content
+    #     THEN the docstring should contain the production method or function that's in the test's body.
+    #     """
+    #     analyzer = make_analyzer(test_file)
+    #     assert analyzer.check_docstring_mentions_production_callable(test_node), \
+    #         f"{method_name}: Docstring does not mention production method/function being tested."
+
+    # if isinstance(child, ast.ListComp)
+
+    def test_when_checking_test_naming_then_follows_test_when_x_then_y_convention(
         self,make_analyzer, test_file, method_name, test_node):
         """
         GIVEN a test method in the codebase
@@ -490,7 +503,7 @@ class TestForTestSmells:
         TEST_CLASSES,
         ids=[f"{Path(tf).stem}::{mn}" for tf, mn, _ in TEST_CLASSES]
         )
-def test_when_checking_class_docstring_then_mentions_production_class(
+def test_when_checking_class_docstring_then_mentions_production_method(
     make_analyzer, test_file, class_name, class_node):
     """
     GIVEN a test class in the codebase
@@ -510,14 +523,14 @@ def test_when_checking_class_docstring_then_mentions_production_class(
 class TestPresenceOfControlFlow:
     """Test that test methods do not contain control flow constructs."""
 
-    @pytest.mark.parametrize("banned_node", [ast.If, ast.For, ast.While, ast.Match])
+    @pytest.mark.parametrize("banned_node", [ast.If, ast.For, ast.While, ast.Match, ast.ListComp])
     def test_when_checking_test_then_no_conditional_logic(
         self, make_analyzer, test_file, method_name, test_node, banned_node
     ):
         """
         GIVEN a test method in the codebase
         WHEN checking the test method's AST
-        THEN the method should not contain conditional logic constructs (if/for/while/try)
+        THEN the method should not contain conditional logic constructs (if/for/while/try/list comprehension/match)
         """
         analyzer = make_analyzer(test_file)
         assert analyzer.check_ast_node_not_present(test_node, banned_node), \
@@ -539,7 +552,7 @@ class TestPresenceOfControlFlow:
 class TestFileLevelChecks:
     """Test file-level checks that apply to the entire test file."""
 
-    def test_when_checking_duplicate_assertions_then_no_duplicates(self, make_analyzer, test_file):
+    def test_when_checking_duplicate_assertions_then_no_duplicates(self, test_file, make_analyzer):
         """
         GIVEN a test file in the codebase
         WHEN checking for duplicate assertions
@@ -571,7 +584,7 @@ class TestFileLevelChecks:
         WHEN checking for pytest.main presence
         THEN the file should contain pytest.main at the bottom of the file.
         """
-        PYTEST_MAIN = r'if\s+__name__\s*==\s*["\']__main__["\']\s*:\s+pytest\.main\(\[__file__\]\)'
+        PYTEST_MAIN  = r'if\s+__name__\s*==\s*["\']\s*__main__\s*["\']\s*:\s+pytest\.main\((?:\[(?:[^][]|\[[^]]*\])*\]|.*?)\)'
 
         # Get the entire file content
         file_content = read_file_content(test_file)

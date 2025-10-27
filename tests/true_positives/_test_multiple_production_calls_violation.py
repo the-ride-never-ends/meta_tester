@@ -15,7 +15,7 @@ def sample_fixture():
 class TestMultipleProductionCallsViolation:
     """Test violations for the production_method function."""
 
-    def test_when_checking_production_calls_then_at_most_one_call(self, sample_fixture):
+    def test_when_checking_production_calls_then_exactly_one_call(self, sample_fixture):
         """
         GIVEN a test method for production_method
         WHEN checking production calls

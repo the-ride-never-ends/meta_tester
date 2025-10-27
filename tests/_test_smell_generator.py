@@ -147,9 +147,6 @@ def _is_module_level(node: ast.AST, tree: ast.AST) -> bool:
                     return True
     return False
 
-
-
-
 def _is_async(node: ast.AST) -> bool:
     """Check if AST node is an async function."""
     return isinstance(node, ast.AsyncFunctionDef)
