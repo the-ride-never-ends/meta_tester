@@ -18,7 +18,7 @@ def sample_fixture():
 class TestMockingMethodUnderTestViolation:
     """Test violations for the production_method function."""
 
-    def test_when_checking_mocking_then_no_fake_tests(self, sample_fixture):
+    def test_when_checking_mocking_then_method_being_tested_is_not_mocked(self, sample_fixture):
         """
         GIVEN a test method 'production_method'
         WHEN checking mocking patterns

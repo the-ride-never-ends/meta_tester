@@ -1,7 +1,4 @@
-
-
-
-
+#!/usr/bin/env python3
 from pathlib import Path
 from typing import List
 
@@ -72,3 +69,6 @@ class TestTrueNegativeDetection:
 
         assert expected_count == actual_count, \
             f"Expected no failed tests for {test_file.name}, got {actual_count} instead\n{output['failed_tests']}"
+
+if __name__ == "__main__":
+    pytest.main([__file__])

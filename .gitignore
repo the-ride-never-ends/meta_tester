@@ -6,6 +6,7 @@ __pycache__/
 # C extensions
 *.so
 *.yaml
+!configs.yaml
 
 # Distribution / packaging
 .Python
@@ -94,3 +95,6 @@ results/
 deprecated/
 logs/
 !logs/_logs_go_here.txt
+
+data_gathering/
+meta_tester.db

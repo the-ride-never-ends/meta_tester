@@ -18,9 +18,9 @@ class Calculator:
         """Returns the difference of a and b."""
         return a - b
 
-# NOTE: This tests to see if the meta-tester ignores fixtures when checking test methods.
+
 @pytest.fixture
-def test_calculator_fixture():
+def calculator_fixture():
     """Fixture providing a Calculator instance for testing."""
     return Calculator()
 
@@ -28,9 +28,10 @@ def test_calculator_fixture():
 class TestCalculatorSubtractMethod:
     """Test class for the Calculator.subtract method functionality."""
 
-    def test_when_subtracting_smaller_from_larger_then_returns_positive_difference(self, test_calculator_fixture):
+    # NOTE: This test is skipped to demonstrate that skips in docstrings are ignored.
+    def test_when_subtracting_smaller_from_larger_then_returns_positive_difference(self, calculator_fixture):
         """
-        GIVEN a Calculator instance with the subtract method
+        GIVEN a Calculator instance with the subtract method skipped
         WHEN subtracting a smaller number from a larger number
         THEN the method returns the positive difference
         """
@@ -38,7 +39,7 @@ class TestCalculatorSubtractMethod:
         THREE = 3
         EXPECTED_DIFFERENCE = 7
 
-        result = test_calculator_fixture.subtract(TEN, THREE)
+        result = calculator_fixture.subtract(TEN, THREE)
 
         assert result == EXPECTED_DIFFERENCE, f"Expected {result} to equal {EXPECTED_DIFFERENCE}"
 

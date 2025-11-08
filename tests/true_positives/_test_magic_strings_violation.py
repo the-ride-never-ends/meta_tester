@@ -15,7 +15,7 @@ def sample_fixture():
 class TestMagicStringsViolation:
     """Test violations for the production_method function."""
 
-    def test_when_checking_magic_literals_then_no_magic_numbers_or_strings(self, sample_fixture):
+    def test_when_checking_magic_literals_then_no_magic_numbers_or_strings_in_assertion(self, sample_fixture):
         """
         GIVEN a test method 'production_method'
         WHEN checking magic literals

@@ -32,8 +32,8 @@ class FixtureAttributeAnalyzer(ast.NodeVisitor):
                 if self._has_fixture_decorator(node):
                     self.fixtures[node.name] = node
             self._get_parameterizations(node)
-        self.parameterizations.add("request")  # Common fixture parameter
-
+        self.parameterizations.add("request")  # Common fixture parameters
+        self.parameterizations.add("caplog")
 
     def _has_fixture_decorator(self, func_node: ast.FunctionDef) -> bool:
         """Check if function has pytest.fixture decorator."""

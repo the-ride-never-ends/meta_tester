@@ -13,7 +13,8 @@ def make_logger(name: str = __name__) -> logging.Logger:
     if not log_folder.exists():
         log_folder.mkdir(parents=True, exist_ok=True)
 
-    log_file_path = log_folder / "meta_tester.log"
+    log_name = "meta_tester" if name == __name__ else name
+    log_file_path = log_folder / f"{log_name}.log"
     # Rotate log after 1MB, keep 1 backup
     file_handler = RotatingFileHandler(log_file_path, maxBytes=1048576, backupCount=1)
     file_handler.setLevel(logging.DEBUG)

@@ -16,7 +16,7 @@ def sample_fixture():
 class TestExternalResourcesViolation:
     """Test violations for the production_method function."""
 
-    def test_when_checking_external_resources_then_no_real_resources(self, sample_fixture):
+    def test_when_checking_external_resources_then_no_real_resources_in_test_method(self, sample_fixture):
         """
         GIVEN a test method 'production_method'
         WHEN checking external resources

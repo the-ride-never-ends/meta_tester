@@ -296,7 +296,7 @@ class TestForTestSmells:
         assert analyzer.check_has_production_calls(test_node), \
             f"{method_name}: Method does not invoke any production methods. Should invoke at least 1."
 
-    def test_when_checking_mocking_then_no_fake_tests(
+    def test_when_checking_mocking_then_method_being_tested_is_not_mocked(
         self, make_analyzer, test_file, method_name, test_node):
         """
         GIVEN a test method in the codebase
@@ -318,7 +318,7 @@ class TestForTestSmells:
         assert analyzer.check_not_skipped(test_node), \
             f"{method_name}: Method is skipped/ignored. Skipped/ignored tests should be removed or fixed."
 
-    def test_when_checking_magic_literals_then_no_magic_numbers_or_strings(
+    def test_when_checking_magic_literals_then_no_magic_numbers_or_strings_in_assertion(
         self, make_analyzer, test_file, method_name, test_node):
         """
         GIVEN a test method in the codebase
@@ -329,7 +329,7 @@ class TestForTestSmells:
         assert analyzer.check_no_magic_literals(test_node), \
             f"{method_name}: Method assertion contains a magic number or string. Assign them to a named constant or variable, then test against that instead."
 
-    def test_when_checking_external_resources_then_no_real_resources(
+    def test_when_checking_external_resources_then_no_real_resources_in_test_method(
         self, make_analyzer, test_file, method_name, test_node):
         """
         GIVEN a test method in the codebase
@@ -342,7 +342,7 @@ class TestForTestSmells:
         assert len(external_resources) == ZERO, \
             f"{method_name}: Method calls the following real external resources\n{external_resources}. Use mocking, stubbing, fixtures, or programmatic generation in factories instead."
 
-    def test_when_checking_print_logging_then_no_output_statements(
+    def test_when_checking_print_logging_then_no_print_or_logging_statements(
         self, make_analyzer, test_file, method_name, test_node):
         """
         GIVEN a test method in the codebase
@@ -435,7 +435,7 @@ class TestForTestSmells:
         assert analyzer.check_no_partial_fixture_access(test_node), \
             f"{method_name}: Method only accesses parts of fixture instead of whole fixture"
 
-    def test_when_checking_resource_assumptions_then_no_resource_optimism(
+    def test_when_checking_resource_assumptions_then_confirms_resource_is_available(
         self, make_analyzer, test_file, method_name, test_node):
         """
         GIVEN a test method in the codebase
@@ -523,14 +523,14 @@ def test_when_checking_class_docstring_then_mentions_production_method(
 class TestPresenceOfControlFlow:
     """Test that test methods do not contain control flow constructs."""
 
-    @pytest.mark.parametrize("banned_node", [ast.If, ast.For, ast.While, ast.Match, ast.ListComp])
+    @pytest.mark.parametrize("banned_node", [ast.If, ast.For, ast.While, ast.Match, ast.ListComp, ast.Or, ast.And])
     def test_when_checking_test_then_no_conditional_logic(
         self, make_analyzer, test_file, method_name, test_node, banned_node
     ):
         """
         GIVEN a test method in the codebase
         WHEN checking the test method's AST
-        THEN the method should not contain conditional logic constructs (if/for/while/try/list comprehension/match)
+        THEN the method should not contain conditional logic constructs (if/for/while/try/list comprehension/match/add/or)
         """
         analyzer = make_analyzer(test_file)
         assert analyzer.check_ast_node_not_present(test_node, banned_node), \

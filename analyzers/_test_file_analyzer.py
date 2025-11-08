@@ -17,7 +17,7 @@ from typing import Any, Callable
 import inspect
 
 
-from logger import logger
+from logger import logger, make_logger
 from utils import read_file_content
 from individual_tests.check_method_length import check_method_length
 from analyzers.fixture_analyzer import FixtureAnalyzer
@@ -103,7 +103,7 @@ class _TestFileAnalyzer:
                  logger: logging.Logger = logger,
                  check_fixture_attribute: Callable = check_fixture_attribute,
                  ):
-        self.logger = logger
+        self.logger = make_logger(name=Path(file_path).absolute().stem)
         self.file_path = file_path
         self.source_code = read_file_content(file_path)
         
@@ -193,6 +193,17 @@ class _TestFileAnalyzer:
         test_methods = []
         for node in ast.walk(self.tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith('test_'):
+                
+                is_fixture = False
+                if hasattr(node, 'decorator_list'):
+                    for decorator in node.decorator_list:
+                        decorator_string = ast.unparse(decorator)
+                        if 'pytest.fixture' in decorator_string:
+                            # Skip fixture functions
+                            is_fixture = True
+                if is_fixture:
+                    continue
+
                 class_name = None
                 # Find parent class if exists
                 for parent in ast.walk(self.tree):
@@ -571,7 +582,10 @@ class _TestFileAnalyzer:
 
     def check_not_skipped(self, test_node: ast.AST) -> bool:
         """Check for absence of skipped/ignored tests."""
-        banned_decorators = ['skip', 'skipif', 'pytest.skip', 'pytest.mark.skip', 'pytest.mark.skipif', 'ignore']
+        banned_decorators = [
+            #'skip', 'skipif', 'ignore', TODO: These produce false positives.
+            'pytest.skip', 'pytest.mark.skip', 'pytest.mark.skipif', 
+        ]
 
         # Check decorators on the test method itself
         node_string = ast.unparse(test_node)
@@ -584,7 +598,12 @@ class _TestFileAnalyzer:
                     return False
         # TODO: Check if skip is inside the method body.
         for banned in banned_decorators:
-            if banned in node_string:
+            # Skip docstrings
+            body = test_node.body if hasattr(test_node, 'body') else []
+            code_nodes = [node for node in body if not isinstance(node, ast.Expr) or not isinstance(node.value, ast.Constant)]
+            code_string = ' '.join(ast.unparse(node) for node in code_nodes)
+
+            if banned in code_string:
                 self.logger.debug(f"Found banned decorator in node string: {banned}")
                 return False
         return True
@@ -844,7 +863,7 @@ class _TestFileAnalyzer:
 
         self.logger.debug(f"Classes in module: {classes}")
         self.logger.debug(f"Functions in module: {functions}")
-        self.logger.debug(f"fixtures: {fixtures}")
+        self.logger.debug(f"Fixtures in module: {fixtures}")
 
         # Look for assignment patterns first: result = some.method() or result = function()
         for node in ast.walk(test_node):
@@ -855,6 +874,7 @@ class _TestFileAnalyzer:
                             case ast.Attribute():
                                 callable_name = node.value.func.attr
                                 # If the attribute's id is a third-party import, skip
+                                self.logger.debug(f"Found attribute assignment call: {ast.dump(node.value)}")
                                 obj_id = node.value.func.value.id
 
                                 if obj_id in self.third_party_imports:

@@ -15,7 +15,7 @@ def sample_fixture():
 class TestPrintStatementViolation:
     """Test violations for the production_method function."""
 
-    def test_when_checking_print_logging_then_no_output_statements(self, sample_fixture):
+    def test_when_checking_print_logging_then_no_print_or_logging_statements(self, sample_fixture):
         """
         GIVEN a test method for production_method
         WHEN checking print/logging

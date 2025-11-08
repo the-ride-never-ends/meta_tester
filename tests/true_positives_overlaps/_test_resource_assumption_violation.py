@@ -15,7 +15,7 @@ def sample_fixture():
 class TestResourceAssumptionViolation:
     """Test violations for the production_method function."""
 
-    def test_when_checking_resource_assumptions_then_no_resource_optimism(self, sample_fixture):
+    def test_when_checking_resource_assumptions_then_confirms_resource_is_available(self, sample_fixture):
         """
         GIVEN a test method for production_method
         WHEN checking resource assumptions
