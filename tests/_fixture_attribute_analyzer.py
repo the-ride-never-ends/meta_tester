@@ -64,6 +64,11 @@ class FixtureAttributeAnalyzer(ast.NodeVisitor):
         if fixture_name in self.parameterizations:
             return False
 
+        # Skip tmp_path
+        # TODO This is hacky.
+        if fixture_name == "tmp_path":
+            return False
+
         #logger.debug(f"Checking if {fixture_name} is in {self.fixtures.keys()}")
         if fixture_name not in self.fixtures:
             raise ValueError(f"Fixture '{fixture_name}' not found")

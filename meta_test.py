@@ -11,9 +11,14 @@ import os
 import re
 from pathlib import Path
 from typing import List
+import sys
+
 
 
 import pytest
+
+# Add this directory to the path
+sys.path.insert(0, str(Path(__file__).parent))
 
 
 from analyzers._test_file_analyzer import _TestFileAnalyzer
@@ -410,7 +415,6 @@ class TestForTestSmells:
     #     assert analyzer.check_docstring_mentions_production_callable(test_node), \
     #         f"{method_name}: Docstring does not mention production method/function being tested."
 
-    # if isinstance(child, ast.ListComp)
 
     def test_when_checking_test_naming_then_follows_test_when_x_then_y_convention(
         self,make_analyzer, test_file, method_name, test_node):

@@ -12,7 +12,6 @@ except ImportError as e:
     sys.exit(1)
 
 
-from __version__ import __version__
 from utils import run_meta_tester_on_file, parse_args, extract_failed_test_names
 
 
@@ -81,7 +80,7 @@ def main() -> int:
             print(f"Failed tests count: {results['failed_count']}")
             print(f"Failed tests: {results['failed_tests']}")
             print("Standard Output:")
-            print(results['stdout'])
+            print(results['stdout'][:100] + "..." if len(results['stdout']) > 100 else results['stdout'])
             print("Standard Error:")
             print(results['stderr'])
             return 0 if results['returncode'] == 0 else 1

@@ -345,6 +345,7 @@ class _TestFileAnalyzer:
 
     def _get_asserts(self, test_node: ast.AST) -> list[ast.Assert]:
         """Extract all assertion calls from a test method."""
+        self.logger.debug(f"Getting asserts for test node: {ast.unparse(test_node)}")
         return [child for child in ast.walk(test_node) if self._is_assert(child)]
 
     def check_no_duplicate_assertions(self, test_node: ast.AST) -> bool:
@@ -367,6 +368,10 @@ class _TestFileAnalyzer:
                 if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith('test_'):
                     assert_strings = self._get_asserts(node)
                     for string in assert_strings:
+                        self.logger.debug(f"Assertion string: {ast.unparse(string)}")
+                        if isinstance(string, ast.Assert):
+                            asserts.append(string)
+                            continue
                         assertion_node = ast.parse(string)
                         asserts.append(assertion_node)
 
@@ -402,7 +407,7 @@ class _TestFileAnalyzer:
         calls = set()
         repeated_calls = set()
         fixture_params = self._get_fixtures(test_node)
-        pytest_keywords = {'getfixturevalue', 'request'}
+        pytest_keywords = {'getfixturevalue', 'request', "tmp_path"}
 
         try:
             # Get decorator nodes to exclude them
@@ -451,10 +456,12 @@ class _TestFileAnalyzer:
                         continue
 
                     if self._is_call_and_attribute(node):
-                        self.logger.debug(f"Found call node: {ast.dump(node)}")
+                        self.logger.debug(f"Found call node: {ast.dump(node)}\n Raw String: {ast.unparse(node)}")
 
                         if isinstance(node.func.value, ast.Subscript):
                             node_id = node.func.value.value.id
+                        elif isinstance(node.func.value, ast.BinOp):
+                            node_id = node.func.value.left.id
                         else:
                             node_id = node.func.value.id
                         self.logger.debug(f"node_id: {node_id}")
@@ -874,7 +881,11 @@ class _TestFileAnalyzer:
                             case ast.Attribute():
                                 callable_name = node.value.func.attr
                                 # If the attribute's id is a third-party import, skip
-                                self.logger.debug(f"Found attribute assignment call: {ast.dump(node.value)}")
+                                self.logger.debug(f"Found attribute assignment call: {ast.dump(node.value)}\n{ast.unparse(node.value)}")
+
+                                # if isinstance(node.value.func.value, ast.Call):
+                                #     obj_id = None
+                                # else:
                                 obj_id = node.value.func.value.id
 
                                 if obj_id in self.third_party_imports:
@@ -1147,7 +1158,7 @@ class _TestFileAnalyzer:
         # Since these will be flagged for tests that use external resources anyways.
         resource_optimism_patterns = [
             # File operations without existence checks
-            ('open', ['r', 'rb', 'w', 'wb', 'a', 'ab']),
+            ('open', ['r', 'rb', 'w', 'wb', 'a', 'ab'], "pathlib.Path.read_text"),
             # Network operations without connection checks
             ('requests.get', 'requests.post', 'requests.put', 'requests.delete'),
             ('urllib.request.urlopen', 'urllib.request.urlretrieve'),

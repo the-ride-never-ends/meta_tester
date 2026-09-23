@@ -6,8 +6,10 @@ import sys
 from pathlib import Path
 
 
-_TRUE_POSITIVES_DIR = Path(__file__).parent / "true_positives"
-_META_TESTER_FILE = Path(__file__).parent.parent / "test_enforce_good_testing_practices.py"
+_BASE_DIR = Path(__file__).parent.parent.parent
+
+_TRUE_POSITIVES_DIR = _BASE_DIR / "tests" / "true_positives"
+_META_TESTER_FILE = _BASE_DIR / "meta_test.py"
 
 
 def run_meta_tester_on_file(test_file: Path) -> tuple[int, str, str]:

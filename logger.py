@@ -16,7 +16,13 @@ def make_logger(name: str = __name__) -> logging.Logger:
     log_name = "meta_tester" if name == __name__ else name
     log_file_path = log_folder / f"{log_name}.log"
     # Rotate log after 1MB, keep 1 backup
-    file_handler = RotatingFileHandler(log_file_path, maxBytes=1048576, backupCount=1)
+    ONE_MB = 1048576
+    file_handler = RotatingFileHandler(
+        log_file_path, 
+        mode="w", 
+        # maxBytes=ONE_MB, 
+        backupCount=1
+    )
     file_handler.setLevel(logging.DEBUG)
 
     formatter = logging.Formatter('%(asctime)s - %(name)s:%(lineno)d - %(levelname)s - %(message)s')
