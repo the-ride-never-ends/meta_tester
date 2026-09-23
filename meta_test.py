@@ -27,7 +27,9 @@ from utils import read_file_content
 
 
 EXCLUDED_DIRS = {
-    '.venv', 'venv', 'node_modules', '.git', '__pycache__', '.pytest_cache', '.mypy_cache', 'site-packages'
+    '.venv', 'venv', 'node_modules', '.git', 
+    '__pycache__', '.pytest_cache', '.mypy_cache', 
+    'site-packages'
 }
 
 
@@ -171,7 +173,7 @@ TEST_FILES = list({t[0] for t in TEST_METHODS})
 @pytest.fixture
 def make_analyzer():
     """Factory fixture to create a _TestFileAnalyzer instance."""
-    def _make_analyzer(test_file: str) -> _TestFileAnalyzer:
+    def _make_analyzer(test_file):
         error = None
         try:
             analyzer = _get_analyzer_for_file(test_file)
