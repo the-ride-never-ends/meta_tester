@@ -1,0 +1,19 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [main]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - run: pipx install poetry && pipx install ruff && pipx install mypy
+      - run: poetry install
+      - run: ruff check .
+      - run: mypy --python-executable "$(poetry env info --executable)" .
+      - run: poetry run pytest -q
