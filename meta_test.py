@@ -8,7 +8,6 @@ and ensure consistent testing standards across the codebase.
 """
 import ast
 import os
-import re
 from pathlib import Path
 from typing import List
 import sys
@@ -22,8 +21,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 
 from analyzers._test_file_analyzer import _TestFileAnalyzer
+from analyzers.source_checks import has_main, has_marker
 from logger import logger
-from utils import read_file_content
 
 
 EXCLUDED_DIRS = {
@@ -193,6 +192,18 @@ def make_analyzer():
     ids=[f"{Path(tf).stem}::{mn}" for tf, mn, _ in TEST_METHODS]
     )
 class TestForTestSmells:
+
+    def test_when_checking_async_test_then_has_asyncio_marker(
+        self, make_analyzer, test_file, method_name, test_node
+    ):
+        """GIVEN a test method
+        WHEN its async marker is checked
+        THEN an async test has an asyncio marker.
+        """
+        analyzer = make_analyzer(test_file)
+        assert has_marker(analyzer.tree, test_node), (
+            f"{method_name}: Expected an asyncio marker for the async test."
+        )
 
     def test_when_checking_test_then_test_only_tests_through_public_contract(
         self, make_analyzer, test_file, method_name, test_node):
@@ -529,7 +540,11 @@ def test_when_checking_class_docstring_then_mentions_production_method(
 class TestPresenceOfControlFlow:
     """Test that test methods do not contain control flow constructs."""
 
-    @pytest.mark.parametrize("banned_node", [ast.If, ast.For, ast.While, ast.Match, ast.ListComp, ast.Or, ast.And])
+    @pytest.mark.parametrize("banned_node", [
+        ast.If, ast.IfExp, ast.For, ast.AsyncFor, ast.While, ast.Match,
+        ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp,
+        ast.Or, ast.And,
+    ])
     def test_when_checking_test_then_no_conditional_logic(
         self, make_analyzer, test_file, method_name, test_node, banned_node
     ):
@@ -584,21 +599,16 @@ class TestFileLevelChecks:
             f"{test_file}: File does not start with a shebang." \
             " All test files must start with a shebang line (e.g. #!/usr/bin/env python3)."
 
-    def test_when_checking_test_file_then_contains_pytest_main(self, test_file):
+    def test_when_checking_test_file_then_contains_pytest_main(
+        self, test_file, make_analyzer
+    ):
         """
         GIVEN a test file in the codebase
         WHEN checking for pytest.main presence
         THEN the file should contain pytest.main at the bottom of the file.
         """
-        PYTEST_MAIN  = r'if\s+__name__\s*==\s*["\']\s*__main__\s*["\']\s*:\s+pytest\.main\((?:\[(?:[^][]|\[[^]]*\])*\]|.*?)\)'
-
-        # Get the entire file content
-        file_content = read_file_content(test_file)
-
-        pytest_main_in_file = re.search(PYTEST_MAIN, file_content, re.MULTILINE)
-
-        # Check if pytest.main is present in the file
-        assert pytest_main_in_file is not None, \
+        analyzer = make_analyzer(test_file)
+        assert has_main(analyzer.tree), \
             f"{test_file}: File does not contain pytest.main. All test files should contain pytest.main at the bottom (e.g. if __name__ == '__main__': pytest.main([__file__]))."
 
 

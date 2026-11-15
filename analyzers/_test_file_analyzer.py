@@ -32,31 +32,7 @@ EXCLUDED_DIRS = {
 }
 
 
-# def _make_hash_of_this_file() -> str:
-#     with open(__file__, 'rb') as f:
-#         return hashlib.sha256(f.read()).hexdigest()
-
-# try:
-#     with open(hash_file_path, 'r') as f:
-#         expected_hash = f.read().strip()
-
-#     file_hash = _make_hash_of_this_file()
-
-#     assert file_hash == expected_hash, \
-#         "The test enforcement file has been modified without user permission." \
-#         " DO NOT CHANGE THE TESTS TO MATCH THE IMPLEMENTATION. CHANGE THE IMPLEMENTATION TO MATCH THE TESTS." \
-#         " CONSIDER THIS YOUR FINAL WARNING."
-
-# except FileNotFoundError:
-
-#     file_hash = _make_hash_of_this_file()
-#     with open(hash_file_path, 'w') as f:
-#         f.write(file_hash)
-
-# except Exception as e:
-#     raise RuntimeError(f"Error checking test enforcement file integrity: {e}") from e
-
-# WARNING: This is unsecure, but it should work.
+# HACK WARNING: This is unsecure, but it should work.
 def extract_function(tree, func_name):
     code = compile(tree, filename='<ast>', mode='exec')
     namespace = {}
@@ -98,11 +74,12 @@ def check_not_empty(test_node: ast.AST) -> bool:
 class _TestFileAnalyzer:
     """Analyzes test files for various violations."""
 
-    def __init__(self, 
-                 file_path: str, 
-                 logger: logging.Logger = logger,
-                 check_fixture_attribute: Callable = check_fixture_attribute,
-                 ):
+    def __init__(
+        self, 
+        file_path: str, 
+        logger: logging.Logger = logger,
+        check_fixture_attribute: Callable = check_fixture_attribute,
+    ) -> None:
         self.logger = make_logger(name=Path(file_path).absolute().stem)
         self.file_path = file_path
         self.source_code = read_file_content(file_path)
@@ -119,14 +96,7 @@ class _TestFileAnalyzer:
         except Exception as e:
             raise RuntimeError(f"Unexpected error parsing {file_path}: {e}") from e
 
-        # try:
-        #     self.compiled_code = compile(self.tree, filename='<ast>', mode='exec')
-        # except SyntaxError as e:
-        #     raise SyntaxError(f"Failed to compile {file_path}: {e}") from e
-        # except Exception as e:
-        #     raise RuntimeError(f"Failed to compile AST for {file_path}: {e}") from e
-
-        self.fixtures: dict[str, ast.FunctionDef] = FixtureAnalyzer(tree=self.tree, file_path=file_path, logger=logger).fixtures
+        self.fixtures: dict[str, ast.FunctionDef | ast.AsyncFunctionDef] = FixtureAnalyzer(tree=self.tree, file_path=file_path, logger=logger).fixtures
         self.third_party_imports: set[str] = self._get_imports()
         self.builtins: set[str] = self._get_builtins()
         self.decorators: set[str] = self._get_decorators()
@@ -135,10 +105,7 @@ class _TestFileAnalyzer:
         # Remove pytest from third-party imports if present
         if 'pytest' in self.third_party_imports:
             self.third_party_imports.remove('pytest')
-        #self.logger.debug(f"Third-party imports at __init__: {self.third_party_imports}")
-        #self.logger.debug(f"Decorators for file: {self.decorators}")
-        # self.logger.debug(f"Built-in names: {self.builtins}")
-        # self.logger.debug(f"Built-in attributes: {self.builtin_attributes}")
+
         self.logger.info(f"Initialized _TestFileAnalyzer for '{file_path}'")
 
     def perform_test(self, name: str, *args) -> Any:
@@ -164,8 +131,6 @@ class _TestFileAnalyzer:
             except Exception:
                 continue
         imported_builtins = sorted(imported_builtins)
-        #self.logger.debug(f"Direct built-ins: {direct_builtins}")
-        #self.logger.debug(f"Imported built-ins: {imported_builtins}")
         all_builtins = direct_builtins.union(imported_builtins)
         return all_builtins
 
@@ -194,14 +159,7 @@ class _TestFileAnalyzer:
         for node in ast.walk(self.tree):
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith('test_'):
                 
-                is_fixture = False
-                if hasattr(node, 'decorator_list'):
-                    for decorator in node.decorator_list:
-                        decorator_string = ast.unparse(decorator)
-                        if 'pytest.fixture' in decorator_string:
-                            # Skip fixture functions
-                            is_fixture = True
-                if is_fixture:
+                if node in self.fixtures.values():
                     continue
 
                 class_name = None
@@ -365,7 +323,9 @@ class _TestFileAnalyzer:
         try:
             asserts = []
             for node in ast.walk(self.tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith('test_'):
+                if (isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+                        and node.name.startswith('test_')
+                        and node not in self.fixtures.values()):
                     assert_strings = self._get_asserts(node)
                     for string in assert_strings:
                         self.logger.debug(f"Assertion string: {ast.unparse(string)}")
@@ -774,9 +734,9 @@ class _TestFileAnalyzer:
 
         # Check for GIVEN/WHEN/THEN format
         requirements = ['GIVEN', 'WHEN', 'THEN']
-        for requirement in requirements:
-            if requirement not in docstring:
-                self.logger.debug(f"Docstring missing requirement: {requirement}")
+        for req in requirements:
+            if req not in docstring:
+                self.logger.debug(f"Docstring missing requirement: {req}")
                 return False
         else:
             return True
@@ -788,8 +748,9 @@ class _TestFileAnalyzer:
             match node:
                 case ast.Import() | ast.ImportFrom():
                     for alias in node.names:
-                        #self.logger.debug(f"Import found: {alias.name}")
-                        third_party_imports.add(alias.asname if alias.asname else alias.name)
+                        third_party_imports.add(
+                            alias.asname if alias.asname else alias.name
+                        )
                 case _:
                     continue
 
@@ -803,7 +764,6 @@ class _TestFileAnalyzer:
                     import_paths[name] = path
             except (ModuleNotFoundError, ImportError):
                 self.logger.debug(f"Could not find spec for import '{name}'")
-        #self.logger.debug(f"Import paths: {import_paths}")
 
         # Check if the imports come from a virtual environment
         # TODO: Venv check needs to be made more robust.
@@ -816,7 +776,6 @@ class _TestFileAnalyzer:
                     break
             else:
                 self.logger.debug(f"Excluding import '{name}' with path: {path}")
-        # self.logger.debug(f"Third-party imports: {filtered_imports}")
         return filtered_imports
 
 
@@ -833,7 +792,7 @@ class _TestFileAnalyzer:
         if name in self.builtin_attributes:
             self.logger.debug(f"Name '{name}' is a builtin attribute.")
             return False
-        # TODO: Hacky bullshit go!
+        # HACK: Hacky bullshit go!
         if name in {'pytest', 'raises', 'getfixturevalue', 'request'}:
             self.logger.debug(f"Name '{name}' is pytest attribute.")
             return False
@@ -866,7 +825,7 @@ class _TestFileAnalyzer:
 
         method_candidate = None
         function_candidate = None
-        class_candidate = None
+        cls_candidate = None
 
         self.logger.debug(f"Classes in module: {classes}")
         self.logger.debug(f"Functions in module: {functions}")
@@ -883,9 +842,6 @@ class _TestFileAnalyzer:
                                 # If the attribute's id is a third-party import, skip
                                 self.logger.debug(f"Found attribute assignment call: {ast.dump(node.value)}\n{ast.unparse(node.value)}")
 
-                                # if isinstance(node.value.func.value, ast.Call):
-                                #     obj_id = None
-                                # else:
                                 obj_id = node.value.func.value.id
 
                                 if obj_id in self.third_party_imports:
@@ -894,7 +850,6 @@ class _TestFileAnalyzer:
 
                                 # Check if the attribute is an attribute of a fixture.
                                 # If it is, skip it.
-
                                 if self._is_local(callable_name, fixtures=fixtures):
                                     if not method_candidate:
                                         method_candidate = callable_name
@@ -905,13 +860,13 @@ class _TestFileAnalyzer:
                                         if not function_candidate:
                                             function_candidate = callable_name
                                     elif callable_name in classes:
-                                        if not class_candidate:
-                                            class_candidate = callable_name
+                                        if not cls_candidate:
+                                            cls_candidate = callable_name
                                     else:
                                         # Use PascalCase heuristic
                                         if callable_name[0].isupper():
-                                            if not class_candidate:
-                                                class_candidate = callable_name
+                                            if not cls_candidate:
+                                                cls_candidate = callable_name
                                         else:
                                             if not function_candidate:
                                                 function_candidate = callable_name
@@ -943,13 +898,13 @@ class _TestFileAnalyzer:
                                     if not function_candidate:
                                         function_candidate = callable_name
                                 elif callable_name in classes:
-                                    if not class_candidate:
-                                        class_candidate = callable_name
+                                    if not cls_candidate:
+                                        cls_candidate = callable_name
                                 else:
                                     # Use PascalCase heuristic
                                     if callable_name[0].isupper():
-                                        if not class_candidate:
-                                            class_candidate = callable_name
+                                        if not cls_candidate:
+                                            cls_candidate = callable_name
                                     else:
                                         if not function_candidate:
                                             function_candidate = callable_name
@@ -961,10 +916,10 @@ class _TestFileAnalyzer:
         if function_candidate:
             self.logger.debug(f"Function candidate found via direct call: {function_candidate}")
             return function_candidate
-        if class_candidate:
-            self.logger.debug(f"Class candidate found via direct call: {class_candidate}")
-            return class_candidate
-        self.logger.debug(f"No production callable found in test method.\n{method_candidate}, {function_candidate}, {class_candidate}")
+        if cls_candidate:
+            self.logger.debug(f"Class candidate found via direct call: {cls_candidate}")
+            return cls_candidate
+        self.logger.debug(f"No production callable found in test method.\n{method_candidate}, {function_candidate}, {cls_candidate}")
         return "NOT FOUND"
 
     def _check_list_comprehension_usage(self, test_node: ast.AST) -> bool:
@@ -995,7 +950,9 @@ class _TestFileAnalyzer:
 
         for method in class_node.body:
             self.logger.debug(f"Inspecting method: '{getattr(method, 'name', 'N/A')}'")
-            if isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)) and method.name.startswith('test_'):
+            if (isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and method.name.startswith('test_')
+                    and method not in self.fixtures.values()):
                 self.logger.debug(f"Checking method '{method.name}' in class {class_node.name}")
                 try:
                     method_name = self._get_method_name(method)
@@ -1018,19 +975,22 @@ class _TestFileAnalyzer:
         parametrize_params = []
         
         if hasattr(test_node, 'decorator_list'):
-            for decorator in test_node.decorator_list:
+            for deco in test_node.decorator_list:
                 # Check for @pytest.mark.parametrize
-                if (isinstance(decorator, ast.Call) and 
-                    isinstance(decorator.func, ast.Attribute) and
-                    isinstance(decorator.func.value, ast.Attribute) and
-                    isinstance(decorator.func.value.value, ast.Name) and
-                    decorator.func.value.value.id == 'pytest' and
-                    decorator.func.value.attr == 'mark' and
-                    decorator.func.attr == 'parametrize'):
+                if (isinstance(deco, ast.Call) and 
+                    isinstance(deco.func, ast.Attribute) and
+                    isinstance(deco.func.value, ast.Attribute) and
+                    isinstance(deco.func.value.value, ast.Name) and
+                    deco.func.value.value.id == 'pytest' and
+                    deco.func.value.attr == 'mark' and
+                    deco.func.attr == 'parametrize'
+                ):
                     
                     # First argument should be the parameter names
-                    if decorator.args and isinstance(decorator.args[0], ast.Constant):
-                        param_string = decorator.args[0].value
+                    if deco.args and isinstance(deco.args[0], ast.Constant):
+                        param_string = deco.args[0].value
+                        assert isinstance(param_string, str), \
+                            f"Parameter names must be a string, got {type(param_string).__name__}"
                         # Handle single parameter or comma-separated parameters
                         if ',' in param_string:
                             params = [p.strip() for p in param_string.split(',')]
@@ -1044,15 +1004,16 @@ class _TestFileAnalyzer:
         """Get actual fixture parameters used in a test method (excluding parametrize params)."""
         all_params = []
         if test_node.args.args:
-            all_params = [arg.arg for arg in test_node.args.args if arg.arg != 'self']
+            all_params = [
+                arg.arg for arg in test_node.args.args if arg.arg != 'self'
+            ]
 
         # Remove parametrize parameters from the list
         parametrize_params = self._get_parametrize_params(test_node)
-        fixture_params = [param for param in all_params if param not in parametrize_params]
-        
-        #self.logger.debug(f"All parameters in {test_node.name}: {all_params}")
-        #self.logger.debug(f"Parametrize parameters: {parametrize_params}")
-        #self.logger.debug(f"Actual fixture parameters: {fixture_params}")
+        fixture_params = [
+            param for param in all_params if param not in parametrize_params
+        ]
+
         return fixture_params
 
 
@@ -1093,8 +1054,6 @@ class _TestFileAnalyzer:
         """
         fixture_params = self._get_fixtures(test_node)
 
-        #self.logger.debug(f"Fixture parameters in {test_node.name}: {fixture_params}")
-
         if not fixture_params:
             return True
 
@@ -1106,8 +1065,6 @@ class _TestFileAnalyzer:
                     if node.value.id == fixture:
                         used_attributes.add(node.attr)
 
-            #self.logger.debug(f"Used attributes for {fixture}: {used_attributes}")
-
             # Find what attributes are declared in the fixture
             declared_attributes = set()
             if fixture in self.fixtures:
@@ -1118,16 +1075,14 @@ class _TestFileAnalyzer:
                             if isinstance(target, ast.Attribute) and isinstance(target.value, ast.Name):
                                 declared_attributes.add(target.attr)
 
-            #self.logger.debug(f"Declared attributes in {fixture}: {declared_attributes}")
-
             # Partial usage: fixture declares attributes that are not used in the test
             if declared_attributes and used_attributes:
                 unused_attributes = declared_attributes - used_attributes
                 if unused_attributes:
-                    #self.logger.debug(f"Unused attributes: {unused_attributes}")
                     return False
 
         return True
+
 
     def check_local_declarations_in_tests(self, test_node: ast.AST) -> list[str]:
         """Check for tests that declare callables locally instead of referencing them."""
@@ -1139,6 +1094,7 @@ class _TestFileAnalyzer:
                     if not child.name.startswith(('test_', 'Test')):
                         declared_callables.append(child.name)
         return declared_callables
+
 
     def check_no_private_attribute_access(self, test_node: ast.AST) -> list[str]:
         """Check for tests that access private attributes or methods."""

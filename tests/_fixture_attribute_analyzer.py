@@ -1,7 +1,7 @@
 import ast
 from typing import Optional
 
-from logger import logger
+from analyzers.fixture_analyzer import FixtureAnalyzer
 
 class FixtureAttributeAnalyzer(ast.NodeVisitor):
     """Analyze fixture attributes to determine if they're callable."""
@@ -10,7 +10,7 @@ class FixtureAttributeAnalyzer(ast.NodeVisitor):
         self.tree = tree if isinstance(tree, ast.AST) else ast.parse(tree)
         self.fixtures = {}
         self.parameterizations = set()
-        self._collect_fixtures()
+        self._collect()
 
     def _get_parameterizations(self, func_node: ast.FunctionDef) -> None:
         """Get argument names that are defined in a parameterization decorator."""
@@ -25,26 +25,13 @@ class FixtureAttributeAnalyzer(ast.NodeVisitor):
                         self.parameterizations.update(names)
 
 
-    def _collect_fixtures(self):
-        """Collect all fixture definitions."""
+    def _collect(self):
+        self.fixtures = FixtureAnalyzer(
+            tree=self.tree, file_path="<ast>"
+        ).fixtures
         for node in ast.walk(self.tree):
-            if isinstance(node, ast.FunctionDef):
-                if self._has_fixture_decorator(node):
-                    self.fixtures[node.name] = node
             self._get_parameterizations(node)
-        self.parameterizations.add("request")  # Common fixture parameters
-        self.parameterizations.add("caplog")
-
-    def _has_fixture_decorator(self, func_node: ast.FunctionDef) -> bool:
-        """Check if function has pytest.fixture decorator."""
-        for decorator in func_node.decorator_list:
-            if isinstance(decorator, ast.Name) and decorator.id == "fixture":
-                return True
-            if isinstance(decorator, ast.Attribute):
-                if decorator.attr == "fixture":
-                    return True
-        #logger.debug(f"Function '{func_node.name}' is not a fixture\ndecorator_list: {func_node.decorator_list}")
-        return False
+        self.parameterizations.update({"request", "caplog"})
 
     def is_attribute_callable(self, fixture_name: str, attr_name: str) -> bool:
         """
